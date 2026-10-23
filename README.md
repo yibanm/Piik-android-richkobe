@@ -24,7 +24,7 @@
 APK 由 GitHub Actions 构建（需要 Google 的 Android SDK、Go 和 Node）：
 
 1. 打开本仓库 **Actions → Android APK**，进入最近一次构建。
-2. 下载 artifact **piik-android-richkobe-apk**，解压得到 `Piik-Android-richkobe.apk`。
+2. 下载 artifact（名如 `piik-android-richkobe-2.3.0-arm64-v8a`），解压得到 `Piik-Android-richkobe-v2.3.0-arm64-v8a.apk`（文件名带版本号与架构）。
 3. 传到手机打开安装（需允许文件管理器或浏览器「安装未知应用」）。
 
 打 `v*` tag 时会额外发布 **Releases**，附带 APK，可直接用手机下载安装。
