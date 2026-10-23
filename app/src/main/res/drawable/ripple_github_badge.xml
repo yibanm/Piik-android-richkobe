@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GitHub 徽标的点击水波纹：包在层叠背景之上，点击有 ripple 反馈 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#40FFFFFF">
+    <item android:drawable="@drawable/bg_github_badge" />
+</ripple>

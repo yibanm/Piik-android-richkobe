@@ -44,11 +44,30 @@ class MainActivity : Activity() {
         HostState.addListener(hostListener)
         renderHost()
         renderRecents()
+        // 主页被系统回收后从桌面图标重进（savedInstanceState 为 null 才是真的
+        // 重新启动，旋转屏幕导致的重建不该跳转）。
+        if (savedInstanceState == null && intent?.action == Intent.ACTION_MAIN) restoreHostPage()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
+        // 从桌面图标重进：singleTask 会把栈顶的共享页清掉，这里把用户带回去。
+        if (intent.action == Intent.ACTION_MAIN) restoreHostPage()
+    }
+
+    /**
+     * 共享仍在进行时把用户带回共享页面。
+     * 主页是 singleTask 且是桌面入口，从桌面图标重进时 Android 会清掉栈顶的
+     * WebActivity，于是「退到桌面再回来就不在投屏页了」。用户主动按返回键回
+     * 主页的情况（[HostState.userLeftHostPage]）不弹回，否则他没法停在主页
+     * 停止共享。
+     */
+    private fun restoreHostPage() {
+        if (HostState.userLeftHostPage) return
+        if (HostState.phase != HostState.Phase.RUNNING) return
+        if (HostState.pageUrl == null) return
+        openHostPage()
     }
 
     override fun onDestroy() {
@@ -114,6 +133,7 @@ class MainActivity : Activity() {
 
     private fun launchHost() {
         openHostWhenReady = true
+        HostState.userLeftHostPage = false
         if (HostState.phase == HostState.Phase.RUNNING) {
             openHostPage()
         } else {
@@ -197,7 +217,8 @@ class MainActivity : Activity() {
             setColor(if (primary) ACCENT else CARD2); cornerRadius = dp(12).toFloat()
         }
         stateListAnimator = null
-        setOnClickListener { onClick() }
+        // 点击时缩一下再回弹，给按钮按下去的实感（不平铺）。
+        setOnClickListener { UiFx.tapBounce(this) { onClick() } }
     }
 
     private fun gap(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(h)) }
@@ -220,13 +241,17 @@ class MainActivity : Activity() {
         titleRow.addView(
             ImageView(this).apply {
                 setImageResource(R.drawable.ic_github)
+                // 层叠徽标：投影 + 渐变面板 + 描边 + 点击水波纹，不再平贴页面。
+                background = getDrawable(R.drawable.ripple_github_badge)
                 contentDescription = getString(R.string.github_repo_desc)
-                setPadding(dp(10), dp(10), dp(2), dp(10))
+                setPadding(dp(12), dp(12), dp(12), dp(12))
                 setOnClickListener {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_REPO)))
+                    UiFx.tapBounce(this) {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_REPO)))
+                    }
                 }
             },
-            LinearLayout.LayoutParams(dp(44), dp(44)),
+            LinearLayout.LayoutParams(dp(48), dp(48)),
         )
         column.addView(titleRow)
         column.addView(text(getString(R.string.home_subtitle), 14f, MUTED))
@@ -296,7 +321,7 @@ class MainActivity : Activity() {
         for (url in list) {
             recentBox.addView(text(Uri.parse(url).host ?: url, 15f, ACCENT).apply {
                 setPadding(0, dp(10), 0, dp(10))
-                setOnClickListener { watch(url) }
+                setOnClickListener { UiFx.tapBounce(this) { watch(url) } }
                 setOnLongClickListener {
                     prefs.edit().putString("recents", recents().filter { it != url }.joinToString("\n")).apply()
                     renderRecents()

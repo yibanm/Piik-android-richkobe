@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.util.Rational
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -29,6 +30,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.Toast
 
 /**
@@ -38,6 +40,7 @@ import android.widget.Toast
 class WebActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
+    private lateinit var githubFab: ImageView
     private var mode = MODE_WATCH
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
@@ -54,6 +57,8 @@ class WebActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        githubFab = buildGithubFab()
+        root.addView(githubFab)
         setContentView(root)
         web.setBackgroundColor(Color.BLACK)
 
@@ -79,6 +84,30 @@ class WebActivity : Activity() {
             }
         }
         handle(intent, savedInstanceState)
+    }
+
+    /**
+     * 右下角悬浮的 GitHub 按钮：观看和共享页面都能打开仓库。
+     * 全屏自定义视图（横屏视频）与画中画期间隐藏，避免遮挡画面；
+     * 半透明圆底 + 点击缩放回弹，平时不抢注意力。
+     */
+    private fun buildGithubFab(): ImageView {
+        val size = UiFx.dp(this, 44)
+        val margin = UiFx.dp(this, 16)
+        return ImageView(this).apply {
+            setImageResource(R.drawable.ic_github)
+            background = getDrawable(R.drawable.bg_github_fab)
+            contentDescription = getString(R.string.github_repo_desc)
+            setPadding(UiFx.dp(this@WebActivity, 11), UiFx.dp(this@WebActivity, 11),
+                UiFx.dp(this@WebActivity, 11), UiFx.dp(this@WebActivity, 11))
+            alpha = 0.85f
+            setOnClickListener {
+                UiFx.tapBounce(this) { openExternal(GITHUB_REPO) }
+            }
+            layoutParams = FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.END).apply {
+                setMargins(0, 0, margin, margin)
+            }
+        }
     }
 
     private fun handle(intent: Intent, saved: Bundle? = null) {
@@ -220,6 +249,7 @@ class WebActivity : Activity() {
             customCallback = callback
             root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             web.visibility = View.GONE
+            githubFab.visibility = View.GONE
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             immersive(true)
         }
@@ -230,6 +260,7 @@ class WebActivity : Activity() {
             customCallback?.onCustomViewHidden()
             customCallback = null
             web.visibility = View.VISIBLE
+            githubFab.visibility = View.VISIBLE
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             immersive(false)
         }
@@ -340,6 +371,8 @@ class WebActivity : Activity() {
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // 画中画小窗里悬浮按钮会盖住画面，进出时同步显隐。
+        githubFab.visibility = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
         web.evaluateJavascript("document.documentElement.classList.toggle('piik-android-pip', $isInPictureInPictureMode)", null)
     }
 
@@ -351,6 +384,8 @@ class WebActivity : Activity() {
             customView != null -> customCallback?.onCustomViewHidden()
             web.canGoBack() -> web.goBack()
             mode == MODE_HOST && HostState.phase == HostState.Phase.RUNNING -> {
+                // 用户主动回主页（想停止共享或看状态），MainActivity 不要再把他弹回来。
+                HostState.userLeftHostPage = true
                 Toast.makeText(this, getString(R.string.web_back_keeps_hosting), Toast.LENGTH_LONG).show()
                 @Suppress("DEPRECATION") super.onBackPressed()
             }
@@ -378,6 +413,8 @@ class WebActivity : Activity() {
         const val MODE_WATCH = "watch"
         const val MODE_HOST = "host"
         private const val REQUEST_WEB_PERMISSION = 3
+        /** 右下角悬浮按钮打开的仓库（与主页 GitHub 图标同一个）。 */
+        private const val GITHUB_REPO = "https://github.com/yibanm/Piik-android-richkobe"
 
         private const val UNLOCK_LOCAL_ADDRESSES = """
             (function () {

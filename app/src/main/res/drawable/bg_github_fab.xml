@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WebActivity 右下角 GitHub 悬浮按钮的圆形半透明背景（不遮挡视频） -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#50FFFFFF">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#B3101218" />
+            <stroke android:width="1dp" android:color="#4A5068" />
+        </shape>
+    </item>
+</ripple>
