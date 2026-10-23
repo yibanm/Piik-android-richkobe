@@ -16,12 +16,6 @@ object HostState {
     @Volatile var message: String? = null
         private set
 
-    /**
-     * 用户主动从主机页面按返回键回到主页（而非系统回收或任务被清）。此时不得
-     * 自动跳回共享页面，否则用户永远停不到主页上停止共享。
-     */
-    @Volatile var userLeftHostPage = false
-
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val externalListeners = CopyOnWriteArrayList<(String) -> Unit>()
