@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "piik-android"
+rootProject.name = "Piik-Android-richkobe"
 include(":app")

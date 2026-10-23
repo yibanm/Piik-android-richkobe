@@ -1,4 +1,4 @@
-package io.github.piikandroid
+package com.richkobe.piikandroid
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -121,8 +121,8 @@ class WebActivity : Activity() {
                     web.loadUrl(page)
                 }
             }
-            HostState.Phase.STARTING -> if (web.url == null) web.loadData(statusPage("Starting Piik…"), "text/html", "utf-8")
-            HostState.Phase.FAILED -> web.loadData(statusPage(HostState.message ?: "Piik stopped."), "text/html", "utf-8")
+            HostState.Phase.STARTING -> if (web.url == null) web.loadData(statusPage(getString(R.string.web_status_starting)), "text/html", "utf-8")
+            HostState.Phase.FAILED -> web.loadData(statusPage(HostState.message ?: getString(R.string.web_status_stopped)), "text/html", "utf-8")
             HostState.Phase.STOPPED -> if (mode == MODE_HOST) finish()
         }
     }
@@ -281,7 +281,7 @@ class WebActivity : Activity() {
         fun copyText(text: String) {
             runOnUiThread {
                 service<ClipboardManager>().setPrimaryClip(ClipData.newPlainText("Piik", text))
-                if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(this@WebActivity, "Copied", Toast.LENGTH_SHORT).show()
+                if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(this@WebActivity, getString(R.string.web_copied), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -291,7 +291,7 @@ class WebActivity : Activity() {
             val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "piik-download" }
             val ok = Diagnostics.saveToDownloads(this@WebActivity, safe, mime, bytes) != null
             runOnUiThread {
-                Toast.makeText(this@WebActivity, if (ok) "Saved to Downloads/$safe" else "Couldn't save $safe", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@WebActivity, if (ok) getString(R.string.web_saved, safe) else getString(R.string.web_save_failed, safe), Toast.LENGTH_LONG).show()
             }
         }
 
@@ -299,7 +299,7 @@ class WebActivity : Activity() {
         fun shareText(text: String, title: String?) {
             runOnUiThread {
                 val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-                startActivity(Intent.createChooser(send, title ?: "Share Piik invite"))
+                startActivity(Intent.createChooser(send, title ?: getString(R.string.web_share_chooser)))
             }
         }
 
@@ -351,7 +351,7 @@ class WebActivity : Activity() {
             customView != null -> customCallback?.onCustomViewHidden()
             web.canGoBack() -> web.goBack()
             mode == MODE_HOST && HostState.phase == HostState.Phase.RUNNING -> {
-                Toast.makeText(this, "Piik keeps hosting. Stop it from the notification or the Piik home screen.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.web_back_keeps_hosting), Toast.LENGTH_LONG).show()
                 @Suppress("DEPRECATION") super.onBackPressed()
             }
             else -> @Suppress("DEPRECATION") super.onBackPressed()

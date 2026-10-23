@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write # attach the APK to tagged releases
 
+# 同一分支的新推送会取消进行中的旧构建（tag 构建不取消，保证发版完整）
+concurrency:
+  group: ${{ github.workflow }}-${{ startsWith(github.ref, 'refs/tags/') && github.ref || github.head_ref || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -18,10 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # v2.3.0 的 go.mod 要求 go >= 1.27.3，旧配置 1.26.x 会直接构建失败
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.x"
-          cache: false
+          go-version: "1.27.x"
+          cache: true # 缓存 go modules 与 build cache，引擎重编译大幅提速
 
       - uses: actions/setup-node@v4
         with:
@@ -32,9 +38,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Gradle 依赖缓存（官方 action，只缓存依赖不动构建缓存，安全）
+      - uses: gradle/actions/setup-gradle@v4
+
       - uses: android-actions/setup-android@v3
         with:
           packages: "platforms;android-35 build-tools;35.0.0"
+
+      # Piik web UI 的 npm 依赖缓存（依赖在构建时克隆的引擎目录里，
+      # 无法按 lockfile 哈希做 key，用固定 key 的下载缓存，内容寻址不会出错）
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-download-cache
+          restore-keys: npm-download-cache
 
       - name: Build Piik engine, capture shim and cloudflared
         run: scripts/build-native.sh
@@ -65,21 +83,20 @@ jobs:
           exit $status
 
       - name: Rename
-        run: cp app/build/outputs/apk/release/app-release.apk piik-android.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Piik-Android-richkobe.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: piik-android-apk
-          path: piik-android.apk
+          name: piik-android-richkobe-apk
+          path: Piik-Android-richkobe.apk
 
-      # Every build on main becomes a downloadable release (handy from a phone).
+      # 发版只在打 tag（v*）时进行；日常 push 的 APK 从上方 artifact 下载。
       - name: Publish release
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Piik for Android (build {0})', github.run_number) }}
-          target_commitish: ${{ github.sha }}
+          tag_name: ${{ github.ref_name }}
+          name: Piik Android richkobe ${{ github.ref_name }}
           make_latest: true
-          body: Download **piik-android.apk** below and open it on your phone to install.
-          files: piik-android.apk
+          body: 下载下方 **Piik-Android-richkobe.apk**，传到手机打开安装即可。
+          files: Piik-Android-richkobe.apk

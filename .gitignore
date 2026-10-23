@@ -6,3 +6,7 @@ local.properties
 .idea/
 # Built by scripts/build-native.sh
 app/src/main/jniLibs/
+# 本地项目管理文件（D:\文档\Claude\Code 的经验/进度制度），不入库
+经验.md
+进度.md
+.claude/

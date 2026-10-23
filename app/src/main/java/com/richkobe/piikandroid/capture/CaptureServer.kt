@@ -1,4 +1,4 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
 import android.content.Context
 import android.net.LocalServerSocket

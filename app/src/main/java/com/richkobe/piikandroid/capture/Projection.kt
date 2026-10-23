@@ -1,6 +1,6 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
-import io.github.piikandroid.service
+import com.richkobe.piikandroid.service
 import android.content.Context
 import android.content.Intent
 import android.hardware.display.DisplayManager
@@ -11,7 +11,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Display
-import io.github.piikandroid.ProjectionActivity
+import com.richkobe.piikandroid.ProjectionActivity
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit

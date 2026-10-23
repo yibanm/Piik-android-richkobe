@@ -1,11 +1,11 @@
-package io.github.piikandroid
+package com.richkobe.piikandroid
 
 import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.util.Log
-import io.github.piikandroid.capture.ProjectionHolder
+import com.richkobe.piikandroid.capture.ProjectionHolder
 
 /** Invisible activity that shows Android's "start recording / casting" dialog. */
 class ProjectionActivity : Activity() {

@@ -1,4 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Piik</string>
+    <!-- 应用名与主页标题（用户指定：Piik Android richkobe） -->
+    <string name="app_name">Piik Android richkobe</string>
+    <string name="home_title">Piik Android richkobe</string>
+    <string name="home_subtitle">和朋友一起投屏——在手机上观看，或从本机发起共享。</string>
+    <string name="github_repo_desc">打开 GitHub 仓库</string>
+
+    <!-- 观看卡片 -->
+    <string name="watch_card_title">观看投屏</string>
+    <string name="watch_card_desc">粘贴别人发给你的邀请链接（或从聊天应用把链接分享到本应用）。</string>
+    <string name="watch_input_hint">https://…</string>
+    <string name="watch_button">观看</string>
+    <string name="watch_link_invalid">这看起来不像一个链接</string>
+    <string name="recent_label">最近</string>
+
+    <!-- 发起共享卡片 -->
+    <string name="host_card_title">从本机发起共享</string>
+    <string name="host_status_stopped">在这台手机上开一个 Piik 房间并共享屏幕。你可以选择「本地」（同一 Wi-Fi）、「公开邀请」（任何有链接的人都能看）或你自己的 Piik 站点。</string>
+    <string name="host_button_start">开始共享</string>
+    <string name="host_status_starting">正在启动 Piik…</string>
+    <string name="host_button_starting">正在启动…</string>
+    <string name="host_status_running">Piik 正在这台手机上运行。</string>
+    <string name="host_status_running_no_wifi">\n你当前不在 Wi-Fi 下：请使用「公开邀请」，别人才能加入。</string>
+    <string name="host_button_open_page">打开主控页面</string>
+    <string name="host_status_stopped_default">Piik 已停止。</string>
+    <string name="host_button_retry">重试</string>
+    <string name="host_button_stop">停止共享</string>
+    <string name="host_button_debug_log">保存调试日志</string>
+
+    <!-- 调试日志 -->
+    <string name="debug_log_collecting">正在收集日志…</string>
+    <string name="debug_log_saved">已保存到 Downloads/%1$s</string>
+    <string name="debug_log_failed">无法保存日志</string>
+
+    <!-- 页脚 -->
+    <string name="footer_license">Piik 的非官方 Android 移植版（MIT 许可证）。与 Piik 项目无关联。</string>
+
+    <!-- 通知 / 前台服务 -->
+    <string name="notif_channel_name">共享中</string>
+    <string name="notif_channel_desc">在本机发起 Piik 共享期间显示</string>
+    <string name="notif_title_projecting">正在通过 Piik 共享你的屏幕</string>
+    <string name="notif_title_hosting">Piik 正在共享</string>
+    <string name="notif_text_open">点击打开主控页面</string>
+    <string name="notif_action_stop">停止</string>
+
+    <!-- 引擎 / 服务错误 -->
+    <string name="host_error_no_engine">此构建未包含 Piik 引擎。请用 scripts/build-native.sh 构建（见 README）。</string>
+    <string name="host_error_start_failed">Piik 无法启动：%1$s</string>
+    <string name="host_error_crashed">Piik 意外退出（代码 %1$d）。最近输出：\n%2$s</string>
+    <string name="host_error_background">Android 不允许 Piik 在后台持续共享：%1$s</string>
+
+    <!-- WebActivity（观看 / 主控页面） -->
+    <string name="web_status_starting">正在启动 Piik…</string>
+    <string name="web_status_stopped">Piik 已停止。</string>
+    <string name="web_copied">已复制</string>
+    <string name="web_saved">已保存到 Downloads/%1$s</string>
+    <string name="web_save_failed">无法保存 %1$s</string>
+    <string name="web_share_chooser">分享 Piik 邀请</string>
+    <string name="web_back_keeps_hosting">Piik 仍在后台共享。请通过通知或 Piik 主页停止。</string>
 </resources>

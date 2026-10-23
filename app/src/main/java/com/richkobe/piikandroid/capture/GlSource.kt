@@ -1,4 +1,4 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
 import android.graphics.SurfaceTexture
 import android.opengl.EGL14

@@ -1,4 +1,4 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo

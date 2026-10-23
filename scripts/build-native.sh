@@ -14,7 +14,9 @@ set -euo pipefail
 
 PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 # Pinned: the patch and the capture contract (protocol 7) were verified against it.
-PIIK_REF=${PIIK_REF:-95cc11f2c1280e7820ae771f9e2e32991591e0d3}
+# v2.3.0 — 带房间聊天（文字/表情/语音）与完整中文语言包；probeProtocol 仍为 7，
+# 补丁 0001-android-support.patch 经 git apply --check 验证可直接应用。
+PIIK_REF=${PIIK_REF:-da7218bf446ed57907a3e95402fff3b4b5c37b5f}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
 ABIS=${ABIS:-arm64-v8a}

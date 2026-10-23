@@ -1,4 +1,4 @@
-package io.github.piikandroid
+package com.richkobe.piikandroid
 
 import android.Manifest
 import android.app.Activity
@@ -20,6 +20,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -75,7 +76,7 @@ class MainActivity : Activity() {
 
     private fun watch(raw: String) {
         val url = normalize(raw) ?: run {
-            linkInput.error = "That doesn't look like a link"
+            linkInput.error = getString(R.string.watch_link_invalid)
             return
         }
         val list = (listOf(url) + recents().filter { it != url }).take(8)
@@ -129,39 +130,38 @@ class MainActivity : Activity() {
     private fun renderHost() {
         when (HostState.phase) {
             HostState.Phase.STOPPED -> {
-                hostStatus.text = "Run a Piik room on this phone and share its screen. " +
-                    "You'll pick Local (same Wi-Fi), Public invite (anyone with the link) or your own Piik Site."
-                hostPrimary.text = "Start hosting"
+                hostStatus.text = getString(R.string.host_status_stopped)
+                hostPrimary.text = getString(R.string.host_button_start)
                 hostStop.visibility = View.GONE
             }
             HostState.Phase.STARTING -> {
-                hostStatus.text = "Starting Piik…"
-                hostPrimary.text = "Starting…"
+                hostStatus.text = getString(R.string.host_status_starting)
+                hostPrimary.text = getString(R.string.host_button_starting)
                 hostStop.visibility = View.VISIBLE
             }
             HostState.Phase.RUNNING -> {
-                hostStatus.text = "Piik is running on this phone." +
-                    if (!NetInfo.onWifi(this)) "\nYou're not on Wi-Fi: use Public invite so others can join." else ""
-                hostPrimary.text = "Open host page"
+                hostStatus.text = getString(R.string.host_status_running) +
+                    if (!NetInfo.onWifi(this)) getString(R.string.host_status_running_no_wifi) else ""
+                hostPrimary.text = getString(R.string.host_button_open_page)
                 hostStop.visibility = View.VISIBLE
                 if (openHostWhenReady) openHostPage()
             }
             HostState.Phase.FAILED -> {
-                hostStatus.text = HostState.message ?: "Piik stopped."
-                hostPrimary.text = "Try again"
+                hostStatus.text = HostState.message ?: getString(R.string.host_status_stopped_default)
+                hostPrimary.text = getString(R.string.host_button_retry)
                 hostStop.visibility = View.GONE
             }
         }
     }
 
     private fun saveDebugLog() {
-        android.widget.Toast.makeText(this, "Collecting log…", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(this, getString(R.string.debug_log_collecting), android.widget.Toast.LENGTH_SHORT).show()
         Thread {
             val name = runCatching { Diagnostics.saveDebugLog(this) }.getOrNull()
             runOnUiThread {
                 android.widget.Toast.makeText(
                     this,
-                    if (name != null) "Saved to Downloads/$name" else "Couldn't save the log",
+                    if (name != null) getString(R.string.debug_log_saved, name) else getString(R.string.debug_log_failed),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }
@@ -207,17 +207,38 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(28), dp(20), dp(28))
         }
-        column.addView(text("Piik", 30f, TEXT, bold = true))
-        column.addView(text("Screen sharing with friends — watch or host from your phone.", 14f, MUTED))
+
+        // 标题行：左侧应用标题，右上角 GitHub 图标（点击打开本仓库）
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        titleRow.addView(
+            text(getString(R.string.home_title), 24f, TEXT, bold = true),
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f),
+        )
+        titleRow.addView(
+            ImageView(this).apply {
+                setImageResource(R.drawable.ic_github)
+                contentDescription = getString(R.string.github_repo_desc)
+                setPadding(dp(10), dp(10), dp(2), dp(10))
+                setOnClickListener {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_REPO)))
+                }
+            },
+            LinearLayout.LayoutParams(dp(44), dp(44)),
+        )
+        column.addView(titleRow)
+        column.addView(text(getString(R.string.home_subtitle), 14f, MUTED))
         column.addView(gap(22))
 
         val watch = card()
-        watch.addView(text("Watch a stream", 18f, TEXT, bold = true))
+        watch.addView(text(getString(R.string.watch_card_title), 18f, TEXT, bold = true))
         watch.addView(gap(6))
-        watch.addView(text("Paste the invite link you were sent (or share it to Piik from your chat app).", 14f, MUTED))
+        watch.addView(text(getString(R.string.watch_card_desc), 14f, MUTED))
         watch.addView(gap(12))
         linkInput = EditText(this).apply {
-            hint = "https://…"
+            hint = getString(R.string.watch_input_hint)
             setHintTextColor(MUTED)
             setTextColor(TEXT)
             isSingleLine = true
@@ -229,33 +250,33 @@ class MainActivity : Activity() {
         }
         watch.addView(linkInput)
         watch.addView(gap(10))
-        watch.addView(button("Watch", true) { watch(linkInput.text.toString()) }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
+        watch.addView(button(getString(R.string.watch_button), true) { watch(linkInput.text.toString()) }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         recentBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         watch.addView(recentBox)
         column.addView(watch)
         column.addView(gap(16))
 
         val host = card()
-        host.addView(text("Host from this phone", 18f, TEXT, bold = true))
+        host.addView(text(getString(R.string.host_card_title), 18f, TEXT, bold = true))
         host.addView(gap(6))
         hostStatus = text("", 14f, MUTED)
         host.addView(hostStatus)
         host.addView(gap(12))
-        hostPrimary = button("Start hosting", true) {
+        hostPrimary = button(getString(R.string.host_button_start), true) {
             if (HostState.phase == HostState.Phase.RUNNING) openHostPage() else startHosting()
         }
         host.addView(hostPrimary, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
-        hostStop = button("Stop hosting", false) { PiikService.stop(this) }
+        hostStop = button(getString(R.string.host_button_stop), false) { PiikService.stop(this) }
         host.addView(gap(8))
         host.addView(hostStop, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         host.addView(gap(8))
-        host.addView(button("Save debug log", false) { saveDebugLog() }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
+        host.addView(button(getString(R.string.host_button_debug_log), false) { saveDebugLog() }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         column.addView(host)
         column.addView(gap(22))
 
-        column.addView(text("Unofficial Android port of Piik (MIT licence). Not affiliated with the Piik project.", 12f, MUTED).apply {
+        column.addView(text(getString(R.string.footer_license), 12f, MUTED).apply {
             gravity = Gravity.CENTER
-            setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/TNTcraftHIM/Piik"))) }
+            setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PIIK_UPSTREAM))) }
         })
 
         return ScrollView(this).apply {
@@ -271,7 +292,7 @@ class MainActivity : Activity() {
         val list = recents()
         if (list.isEmpty()) return
         recentBox.addView(gap(14))
-        recentBox.addView(text("Recent", 12f, MUTED, bold = true))
+        recentBox.addView(text(getString(R.string.recent_label), 12f, MUTED, bold = true))
         for (url in list) {
             recentBox.addView(text(Uri.parse(url).host ?: url, 15f, ACCENT).apply {
                 setPadding(0, dp(10), 0, dp(10))
@@ -287,6 +308,10 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_HOST_PERMISSIONS = 1
+        /** 右上角 GitHub 图标打开的仓库（本移植版）。 */
+        private const val GITHUB_REPO = "https://github.com/yibanm/Piik-android-richkobe"
+        /** 页脚免责声明点击打开的上游项目。 */
+        private const val PIIK_UPSTREAM = "https://github.com/TNTcraftHIM/Piik"
         private val BG = Color.parseColor("#0B0C10")
         private val CARD = Color.parseColor("#15171E")
         private val CARD2 = Color.parseColor("#1E2130")

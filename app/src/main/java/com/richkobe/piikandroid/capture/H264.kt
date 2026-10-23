@@ -1,4 +1,4 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
 /**
  * H.264 helpers. Piik only accepts constrained-baseline streams whose

@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "io.github.piikandroid"
+    namespace = "com.richkobe.piikandroid"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.piikandroid"
+        applicationId = "com.richkobe.piikandroid"
         minSdk = 29 // Android 10: playback-audio capture and modern MediaCodec keys
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "2.3.0" // 跟随内置 Piik 引擎版本
         // Piik's Go binaries are built for 64-bit ARM (and x86_64 for emulators).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }

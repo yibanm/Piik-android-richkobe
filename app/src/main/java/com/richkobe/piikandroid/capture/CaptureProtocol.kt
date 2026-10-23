@@ -1,4 +1,4 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
 /**
  * The JSON messages of Piik's capture contract (protocol 7). Kept free of

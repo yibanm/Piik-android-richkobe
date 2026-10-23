@@ -1,103 +1,115 @@
-# Piik for Android (unofficial port)
+# Piik Android richkobe
 
-An Android app for [Piik](https://github.com/TNTcraftHIM/Piik), the open-source screen-sharing app. With it you can:
+[Piik](https://github.com/TNTcraftHIM/Piik)（开源屏幕共享应用）的 Android 汉化优化版。有了它可以：
 
-- **Watch** any Piik invite link in a full-screen player, with picture-in-picture when you leave the app.
-- **Host** from the phone: run a Piik room on it and share the phone's screen and sound with friends.
+- **观看**任何 Piik 邀请链接，全屏播放，离开应用时自动进入画中画。
+- **从手机发起共享**：在手机上开一个 Piik 房间，把手机屏幕和声音分享给朋友。
+- **房间聊天**：文字、表情、语音互动，与桌面端 Piik 一致（v2.3.0 引擎自带，走 WebRTC 数据通道，无需服务器）。
 
-It is a port, not a rewrite. The phone runs **Piik's own engine** (its Go App, cross-compiled for Android) and shows **Piik's own web interface**. The new part is Android screen capture, which plugs into the same capture contract Piik's Windows, macOS and Linux helpers use. So rooms, invites, passwords, Public invite links, quality settings and viewers all behave exactly like desktop Piik.
+这是移植而非重写。手机上运行的是 **Piik 自己的引擎**（其 Go App，为 Android 交叉编译）并展示 **Piik 自己的 web 界面**（内置完整简体中文语言包，本应用强制默认中文）。新增的部分是 Android 屏幕采集，接入 Piik 在 Windows、macOS、Linux 采集器上使用的同一套采集契约。因此房间、邀请、密码、公开邀请链接、画质设置和观看者管理的行为与桌面端 Piik 完全一致。
 
-Not affiliated with the Piik project. MIT licensed, like Piik.
+与 Piik 项目无关联。MIT 许可证，与 Piik 相同。
 
-## Getting the APK
+## 本版本相对原移植版的改动
 
-The APK is built by GitHub Actions (it needs Google's Android SDK, Go and Node):
+- 应用名与应用内标题：**Piik Android richkobe**；包名：`com.richkobe.piikandroid`。
+- 壳层界面（主页 / 通知 / 提示）全部汉化；web 界面默认强制中文（URL 注入 `piik-lang=zh`）。
+- 主页右上角新增 **GitHub 图标**，点击直达本仓库。
+- 内置引擎升级至 **Piik v2.3.0**：获得房间聊天（文字/表情/语音）、观看端改进（NAT 预测、编解码器预检、远端输入通道、统计增强）与更完整的中文语言包。
+- 网络：IPv4/IPv6 双栈媒体传输（ICE 候选收集与 wildcard 双栈 UDP，引擎原生支持）；UDP 优先、TCP 回退、STUN 多服务器容灾（cloudflare + 小米 + bilibili）、cloudflared 隧道提供公开邀请中继——移动数据下也可共享。
+- CI 工作流：Go 1.27 + Gradle/npm/go module 三重缓存 + 并发防抖；Release 改为仅打 tag 时发布，日常构建从 Actions artifact 下载。
 
-1. Push this folder to a GitHub repository.
-2. Open **Actions → Android APK → Run workflow** (it also runs on every push).
-3. Download **piik-android-apk** from the run, copy it to your phone, and open it to install (allow "install unknown apps" for your file manager or browser).
+## 获取 APK
 
-Every build on `main` is also published under **Releases** with the APK attached, so you can download it straight from your phone.
+APK 由 GitHub Actions 构建（需要 Google 的 Android SDK、Go 和 Node）：
 
-**Updates:** CI signs with a throwaway debug key unless you add a keystore, and Android refuses to update an app signed with a different key. For installable updates, add the repository secrets `PIIK_KEYSTORE_BASE64` (base64 of a `.jks`), `PIIK_KEYSTORE_PASSWORD`, `PIIK_KEY_ALIAS` and `PIIK_KEY_PASSWORD`.
+1. 打开本仓库 **Actions → Android APK**，进入最近一次构建。
+2. 下载 artifact **piik-android-richkobe-apk**，解压得到 `Piik-Android-richkobe.apk`。
+3. 传到手机打开安装（需允许文件管理器或浏览器「安装未知应用」）。
 
-### Building locally
+打 `v*` tag 时会额外发布 **Releases**，附带 APK，可直接用手机下载安装。
 
-Needs Go ≥ 1.26, Node ≥ 22, git, and Android Studio (or the Android SDK with platform 35).
+**关于更新：** 未配置签名密钥时 CI 用一次性 debug key 签名，而 Android 拒绝用不同密钥签名的应用覆盖升级。如需可覆盖升级，请在仓库 Secrets 配置 `PIIK_KEYSTORE_BASE64`（`.jks` 的 base64）、`PIIK_KEYSTORE_PASSWORD`、`PIIK_KEY_ALIAS`、`PIIK_KEY_PASSWORD`。
+
+### 本地构建
+
+需要 Go ≥ 1.27.3、Node ≥ 24、git，以及 Android Studio（或含 platform 35 的 Android SDK）。
 
 ```sh
-scripts/build-native.sh        # Piik engine + capture shim + cloudflared → app/src/main/jniLibs
+scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app/src/main/jniLibs
 ./gradlew assembleRelease      # → app/build/outputs/apk/release/app-release.apk
 ```
 
-`ABIS="arm64-v8a x86_64" scripts/build-native.sh` adds an x86_64 build for the Android emulator. `SKIP_CLOUDFLARED=1` leaves out Public invite support (Local and Site modes still work).
+`ABIS="arm64-v8a x86_64" scripts/build-native.sh` 会为 Android 模拟器追加 x86_64 构建。`SKIP_CLOUDFLARED=1` 会去掉「公开邀请」支持（「本地」与「站点」模式不受影响）。
 
-## Using it
+## 使用方法
 
-**Watch:** paste an invite link, or share it to Piik from Discord, WhatsApp or similar. Links to `*.trycloudflare.com` (Piik Public invites) can open straight in the app. Leaving the app while a stream plays switches to picture-in-picture.
+**观看：** 粘贴邀请链接，或从微信、QQ、Discord 等聊天应用把链接「分享」到本应用。`*.trycloudflare.com`（Piik 公开邀请）链接可直接在应用内打开。播放中离开应用会切换到画中画。
 
-**Host:**
+**发起共享：**
 
-1. Tap **Start hosting**. Allow notifications and audio recording; audio lets shares include the phone's sound and your microphone.
-2. Piik's launcher appears. Pick a mode:
-   - **Local room:** same Wi-Fi.
-   - **Public invite:** anyone with the link, no port forwarding, works on mobile data.
-   - **Connect to Site:** a Piik server you run.
-3. **Start sharing → System screen or window picker.** Android's own dialog asks what to share. On Android 14+ you can share a single app instead of the whole screen.
-4. Switch to the app or game you want to share. A notification keeps hosting alive; **Stop** is in the notification and on the home screen.
+1. 点 **开始共享**。允许通知与录音权限；录音让共享包含手机声音和你的麦克风。
+2. 出现 Piik 启动器，选择模式：
+   - **本地房间：** 同一 Wi-Fi 内。
+   - **公开邀请：** 任何有链接的人都能看，无需端口转发，移动数据可用。
+   - **连接站点：** 你自己运行的 Piik 服务器。
+3. **开始共享 → 系统的屏幕/窗口选择器。** Android 自己的对话框会询问共享什么。Android 14+ 可以只共享单个应用而非整块屏幕。
+4. 切换到要共享的应用或游戏。通知会让共享保持存活；**停止**按钮在通知里和主页上都有。
 
-Quality changes, viewer management and invite links all happen in Piik's normal host page.
+画质调整、观看者管理和邀请链接都在 Piik 常规的主控页面里进行。
 
-## How it works
+**房间聊天：** 主控页与观看页均有聊天入口（v2.3.0 引擎提供），支持文字、表情互动与房间语音。
+
+## 工作原理
 
 ```
- WebView (Piik's web UI) ──localhost──▶ libpiik.so  (Piik's Go App engine, child process)
-                                           │  spawns its "native capture process":
+ WebView (Piik 的 web UI) ──localhost──▶ libpiik.so  (Piik 的 Go App 引擎，子进程)
+                                           │  启动它的「本地采集进程」：
                                            ▼
                                       libpiikcapture.so (shim) ──abstract Unix socket──▶ CaptureServer (Kotlin)
                                                                                            │
-   MediaProjection ─▶ VirtualDisplay ─▶ GL (scale + letterbox) ─▶ MediaCodec H.264 per layer ─┤ SMED frames
-   AudioPlaybackCapture / microphone ─▶ 48 kHz PCM ─────────────────────────────────────────┘
+   MediaProjection ─▶ VirtualDisplay ─▶ GL (缩放 + 加边) ─▶ 每层一个 MediaCodec H.264 ──────┤ SMED 帧
+   AudioPlaybackCapture / 麦克风 ─▶ 48 kHz PCM ─────────────────────────────────────────────┘
 ```
 
-- **Capture contract.** `CaptureServer` implements Piik's protocol 7, the same as `native/capture/linux/main.c`:
-  - `--probe`, `--list`, `--list-microphones`, `--capture-video`, `--encoded-video`, `--capture-audio`, `--capture-microphone`
-  - 32-byte "SMED" frames
-  - starting and active status
-  - Begin frames
-  - per-layer simulcast with `A`/`K`/`B`/`Q` control
-- **Encoding.** One GL thread renders each frame into one hardware encoder per simulcast layer. Hardware encoders' SPS is normalized to the constrained-baseline `42c0xx` profile-level-id Piik requires.
-- **One display, kept alive.** Android 14+ allows one VirtualDisplay per screen-capture consent, so the screen source outlives Piik's capture processes, which restart on every quality change. You aren't asked again on each change.
-- **Patch to Piik** (`native/piik-patches/`, about 40 lines):
-  - Accepts `platform: "android"` from the capture helper.
-  - Hands page-open requests to the app instead of `xdg-open`.
-  - Takes LAN addresses and DNS servers from the app. On Android, pure-Go binaries can't read either: there's no `/etc/resolv.conf`, and Android 11+ blocks netlink.
-- **cloudflared** is built from source with the same DNS fix.
-- **WebView and local addresses.** WebView hides local addresses behind mDNS names. Resolving them needs multicast, which mobile data never carries. Piik's host page reaches the engine over WebRTC, so in host mode the app briefly opens the microphone (stopped immediately), which makes WebView use real addresses. A Wi-Fi multicast lock covers the case where the microphone permission is denied.
+- **采集契约。** `CaptureServer` 实现 Piik 的 protocol 7，与 `native/capture/linux/main.c` 相同：
+  - `--probe`、`--list`、`--list-microphones`、`--capture-video`、`--encoded-video`、`--capture-audio`、`--capture-microphone`
+  - 32 字节「SMED」帧
+  - starting 与 active 状态
+  - Begin 帧
+  - 按层 simulcast，`A`/`K`/`B`/`Q` 控制
+- **编码。** 一条 GL 线程把每帧渲染进每个 simulcast 层各一个硬件编码器。硬件编码器的 SPS 被归一化为 Piik 要求的 constrained-baseline `42c0xx` profile-level-id。
+- **一块屏幕，保持存活。** Android 14+ 每次屏幕采集授权只允许一个 VirtualDisplay，因此屏幕源的生命周期长于 Piik 的采集进程（画质每次变更都会重启采集进程），你不会每次变更都被再问一遍。
+- **对 Piik 的补丁**（`native/piik-patches/`，约 40 行）：
+  - 接受采集辅助进程上报的 `platform: "android"`。
+  - 把打开页面的请求交给应用处理，而不是 `xdg-open`。
+  - 从应用获取局域网地址与 DNS 服务器。在 Android 上纯 Go 二进制两者都读不到：没有 `/etc/resolv.conf`，且 Android 11+ 屏蔽 netlink。
+- **cloudflared** 从源码构建，带同样的 DNS 修复。
+- **WebView 与本地地址。** WebView 会把本地地址藏进 mDNS 名字后面。解析它们需要组播，而移动数据从不携带组播。Piik 的主控页通过 WebRTC 连接引擎，因此在主控模式下应用会短暂打开麦克风（随即停止），让 WebView 使用真实地址。若麦克风权限被拒绝，还有 Wi-Fi 组播锁兜底。
 
-## What has been verified, and what hasn't
+## 已验证与未验证
 
-Verified off-device:
+上游已离线验证（v2.3.0）：
 
-- The patched Piik engine and cloudflared cross-compile for Android, and Piik's own tests pass with the patch.
-- All the Kotlin compiles against the Android 15 SDK.
-- Piik's capture client and its strict validators accept the app's protocol output through the real shim:
-  - probe, sources, starting and active status, and SPS normalization
-  - three simulcast layers, including mid-stream layer activation opening on a key frame
-  - live bitrate and key-frame control
-  - system audio
-- Piik's launcher → Local room → host page → native share flow works end to end in Chromium (WebView's engine), using a stand-in for the Android capture service.
+- 打过补丁的 Piik 引擎与 cloudflared 可为 Android 交叉编译，Piik 自己的测试在打补丁后通过。
+- 全部 Kotlin 代码针对 Android 15 SDK 编译通过。
+- Piik 的采集客户端及其严格校验器接受本应用通过真实 shim 输出的协议内容：
+  - probe、源列表、starting 与 active 状态、SPS 归一化
+  - 三个 simulcast 层，包括流中途激活层时以关键帧打开
+  - 实时码率与关键帧控制
+  - 系统音频
+- Piik 的启动器 → 本地房间 → 主控页 → 原生共享流程在 Chromium（WebView 的内核）里端到端跑通，使用 Android 采集服务的替身。
 
-**Not yet run on a real phone or emulator.** MediaProjection, MediaCodec, the GL path, the foreground service and the WebView itself have only been compile-checked. Expect a first round of device fixes. `adb logcat -s PiikService PiikCapture PiikVideo PiikEncoder PiikGl PiikProjection PiikWeb` shows what's happening.
+本移植版在真机上的验证状态见仓库 Actions 构建结果与 issue。`adb logcat -s PiikService PiikCapture PiikVideo PiikEncoder PiikGl PiikProjection PiikWeb` 可查看运行日志。
 
-## Limitations
+## 限制
 
-- Apps that block screenshots (banking, Netflix and other DRM video) appear black. Apps that opt out of audio capture are silent. Calls and notification sounds are never captured.
-- Sharing pauses when the screen turns off.
-- The microphone indicator flashes briefly when the host page loads (see above).
-- Hosting several viewers on mobile data uses a lot of upload. Piik's quality settings apply.
-- The APK is about 75 MB (arm64), because it carries the full Piik engine and cloudflared.
+- 阻止截屏的应用（银行、Netflix 等 DRM 视频）会显示黑屏。选择不被采集音频的应用是无声的。通话与通知音永远不被采集。
+- 熄屏时共享暂停。
+- 主控页加载时麦克风指示灯会短暂闪烁（原因见上文）。
+- 在移动数据下服务多个观看者会消耗大量上行流量。Piik 的画质设置生效。
+- APK 约 75 MB（arm64），因为携带完整的 Piik 引擎和 cloudflared。
 
-## Licences
+## 许可
 
-This port is MIT. Piik is MIT (© its authors), and its third-party notices are built into the web interface at `/third-party-licenses.txt`. cloudflared is Apache-2.0 (© Cloudflare).
+本移植版为 MIT。Piik 为 MIT（© 其作者），其第三方声明内置于 web 界面 `/third-party-licenses.txt`。cloudflared 为 Apache-2.0（© Cloudflare）。GitHub 图标来自 GitHub octicons（MIT）。

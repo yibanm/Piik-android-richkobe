@@ -1,4 +1,4 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
 import java.io.DataInputStream
 import java.io.EOFException

@@ -1,4 +1,4 @@
-package io.github.piikandroid
+package com.richkobe.piikandroid
 
 import android.content.Context
 

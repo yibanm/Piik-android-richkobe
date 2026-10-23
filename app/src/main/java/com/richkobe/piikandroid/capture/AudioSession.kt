@@ -1,6 +1,6 @@
-package io.github.piikandroid.capture
+package com.richkobe.piikandroid.capture
 
-import io.github.piikandroid.service
+import com.richkobe.piikandroid.service
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager

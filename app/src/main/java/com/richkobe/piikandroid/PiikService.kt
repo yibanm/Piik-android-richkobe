@@ -1,4 +1,4 @@
-package io.github.piikandroid
+package com.richkobe.piikandroid
 
 import android.Manifest
 import android.app.Notification
@@ -15,8 +15,8 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import io.github.piikandroid.capture.CaptureServer
-import io.github.piikandroid.capture.ProjectionHolder
+import com.richkobe.piikandroid.capture.CaptureServer
+import com.richkobe.piikandroid.capture.ProjectionHolder
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -40,8 +40,8 @@ class PiikService : Service() {
         instance = this
         val nm = service<NotificationManager>()
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Hosting", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Shown while Piik is hosting from this phone"
+            NotificationChannel(CHANNEL, getString(R.string.notif_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
+                description = getString(R.string.notif_channel_desc)
             },
         )
         ProjectionHolder.onProjectionEnded = {
@@ -69,7 +69,7 @@ class PiikService : Service() {
         val engine = File(lib, "libpiik.so")
         val shim = File(lib, "libpiikcapture.so")
         if (!engine.exists() || !shim.exists()) {
-            fail("This build does not include the Piik engine. Build it with scripts/build-native.sh (see README).")
+            fail(getString(R.string.host_error_no_engine))
             return
         }
         try {
@@ -107,14 +107,14 @@ class PiikService : Service() {
                     process = null
                     cleanup()
                     if (code == 0 || stopping) HostState.update(HostState.Phase.STOPPED)
-                    else HostState.update(HostState.Phase.FAILED, message = "Piik stopped unexpectedly (code $code). Recent output:\n" + HostState.logText().takeLast(800))
+                    else HostState.update(HostState.Phase.FAILED, message = getString(R.string.host_error_crashed, code, HostState.logText().takeLast(800)))
                     stopSelf()
                 }
             }, "piik-wait").start()
             acquireWifiLock()
         } catch (e: Exception) {
             Log.e(TAG, "could not start engine", e)
-            fail("Piik could not start: ${e.message}")
+            fail(getString(R.string.host_error_start_failed, e.message ?: ""))
         }
     }
 
@@ -202,11 +202,11 @@ class PiikService : Service() {
         )
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (projecting) "Sharing your screen with Piik" else "Piik is hosting")
-            .setContentText("Tap to open the host page")
+            .setContentTitle(getString(if (projecting) R.string.notif_title_projecting else R.string.notif_title_hosting))
+            .setContentText(getString(R.string.notif_text_open))
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "Stop", stop).build())
+            .addAction(Notification.Action.Builder(null, getString(R.string.notif_action_stop), stop).build())
             .build()
         return try {
             if (Build.VERSION.SDK_INT >= 34) {
@@ -222,7 +222,7 @@ class PiikService : Service() {
             true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed", e)
-            fail("Android did not allow Piik to keep hosting in the background: ${e.message}")
+            fail(getString(R.string.host_error_background, e.message ?: ""))
             false
         }
     }
@@ -243,8 +243,8 @@ class PiikService : Service() {
         private const val CHANNEL = "hosting"
         private const val NOTIFICATION_ID = 1
         private const val OPEN_MARKER = "PIIK_ANDROID_OPEN "
-        const val ACTION_START = "io.github.piikandroid.START"
-        const val ACTION_STOP = "io.github.piikandroid.STOP"
+        const val ACTION_START = "com.richkobe.piikandroid.START"
+        const val ACTION_STOP = "com.richkobe.piikandroid.STOP"
 
         @Volatile var instance: PiikService? = null
             private set
