@@ -279,9 +279,10 @@ class MainActivity : Activity() {
         column.addView(host)
         column.addView(gap(22))
 
+        // 许可证署名保留文字，但不做成链接：主页已有右上角 GitHub 徽标作为仓库入口，
+        // 页脚再挂一个可点文字只是多余的点击区。
         column.addView(text(getString(R.string.footer_license), 12f, MUTED).apply {
             gravity = Gravity.CENTER
-            setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PIIK_UPSTREAM))) }
         })
 
         return ScrollView(this).apply {
@@ -315,8 +316,6 @@ class MainActivity : Activity() {
         private const val REQUEST_HOST_PERMISSIONS = 1
         /** 右上角 GitHub 图标打开的仓库（本移植版）。 */
         private const val GITHUB_REPO = "https://github.com/yibanm/Piik-android-richkobe"
-        /** 页脚免责声明点击打开的上游项目。 */
-        private const val PIIK_UPSTREAM = "https://github.com/TNTcraftHIM/Piik"
         private val BG = Color.parseColor("#0B0C10")
         private val CARD = Color.parseColor("#15171E")
         private val CARD2 = Color.parseColor("#1E2130")
