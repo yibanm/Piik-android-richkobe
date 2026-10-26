@@ -349,11 +349,18 @@ class WebActivity : Activity() {
     override fun onBackPressed() {
         when {
             customView != null -> customCallback?.onCustomViewHidden()
-            web.canGoBack() -> web.goBack()
-            mode == MODE_HOST && HostState.phase == HostState.Phase.RUNNING -> {
-                Toast.makeText(this, getString(R.string.web_back_keeps_hosting), Toast.LENGTH_LONG).show()
+            // 主机页是单页应用（launcher ↔ 房间页之间会产生网页历史）。若让返回键
+            // 走网页后退，用户会一直在这几页里打转，永远回不到原生主页，也就拿不到
+            // 主页的「停止共享」按钮，只能杀进程。所以主机模式下返回键直接回主页，
+            // 后台共享不受影响（前台服务仍在跑）。
+            mode == MODE_HOST -> {
+                if (HostState.phase == HostState.Phase.RUNNING) {
+                    Toast.makeText(this, getString(R.string.web_back_keeps_hosting), Toast.LENGTH_LONG).show()
+                }
                 @Suppress("DEPRECATION") super.onBackPressed()
             }
+            // 观看模式保留网页历史后退：观看端在多路画面之间切换需要它。
+            web.canGoBack() -> web.goBack()
             else -> @Suppress("DEPRECATION") super.onBackPressed()
         }
     }

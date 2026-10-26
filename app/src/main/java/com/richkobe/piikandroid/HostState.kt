@@ -16,6 +16,14 @@ object HostState {
     @Volatile var message: String? = null
         private set
 
+    /**
+     * 是否静音「系统声音」（手机正在播放的声音）。只作用于屏幕共享音频，
+     * 不影响麦克风与房间语音。上游 web 的声音开关绑死了 Windows 特有的
+     * 「按应用排除音频」能力，Android 上永远不显示，所以开关放在壳层：
+     * 采集侧照常读 AudioRecord，只是把要发给引擎的 PCM 换成静音。
+     */
+    @Volatile var systemAudioMuted = false
+
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val externalListeners = CopyOnWriteArrayList<(String) -> Unit>()

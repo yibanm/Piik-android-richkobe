@@ -1,5 +1,6 @@
 package com.richkobe.piikandroid.capture
 
+import com.richkobe.piikandroid.HostState
 import com.richkobe.piikandroid.service
 import android.Manifest
 import android.content.Context
@@ -128,6 +129,9 @@ class AudioSession(private val context: Context, private val ch: ShimChannel) {
                     active = true
                     timestamp = System.nanoTime() / 100
                 }
+                // 壳层「系统声音」静音：只静音屏幕共享音频，麦克风与房间语音不受影响。
+                // 照常读 AudioRecord（保持采集管线运转），但把发出去的帧换成静音。
+                val muted = !microphone && HostState.systemAudioMuted
                 if (mono) {
                     // Duplicate each 16-bit sample into left and right.
                     var o = 0
@@ -137,9 +141,9 @@ class AudioSession(private val context: Context, private val ch: ShimChannel) {
                         pcm[o + 2] = readBuf[i]; pcm[o + 3] = readBuf[i + 1]
                         o += 4; i += 2
                     }
-                    ch.frame(Smed.PCM, timestamp100ns = timestamp, duration100ns = FRAME_100NS, payload = pcm)
+                    ch.frame(Smed.PCM, timestamp100ns = timestamp, duration100ns = FRAME_100NS, payload = if (muted) silence else pcm)
                 } else {
-                    ch.frame(Smed.PCM, timestamp100ns = timestamp, duration100ns = FRAME_100NS, payload = readBuf)
+                    ch.frame(Smed.PCM, timestamp100ns = timestamp, duration100ns = FRAME_100NS, payload = if (muted) silence else readBuf)
                 }
                 timestamp += FRAME_100NS
             }

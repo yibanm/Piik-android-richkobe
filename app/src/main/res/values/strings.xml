@@ -57,5 +57,27 @@
     <string name="web_saved">已保存到 Downloads/%1$s</string>
     <string name="web_save_failed">无法保存 %1$s</string>
     <string name="web_share_chooser">分享 Piik 邀请</string>
-    <string name="web_back_keeps_hosting">Piik 仍在后台共享。请通过通知或 Piik 主页停止。</string>
+    <string name="web_back_keeps_hosting">Piik 仍在后台共享。可通过悬浮球、通知或主页停止。</string>
+
+    <!-- 悬浮球 -->
+    <string name="float_channel_name">悬浮球</string>
+    <string name="float_channel_desc">悬浮球常驻期间显示，用于随时开始或停止共享</string>
+    <string name="float_notification_title">悬浮球已开启</string>
+    <string name="float_notification_text">点击屏幕边缘的小球即可开始或停止共享</string>
+    <string name="float_state_idle">未在共享</string>
+    <string name="float_state_sharing">正在共享中</string>
+    <string name="float_start">开始共享</string>
+    <string name="float_starting">正在启动…</string>
+    <string name="float_stop">停止共享</string>
+    <string name="float_open_host">打开主控页</string>
+    <string name="float_hide">收起悬浮球</string>
+    <string name="float_switch_label">悬浮球（在游戏或其他 App 里也能开始 / 停止共享）</string>
+    <string name="float_need_permission">悬浮球需要「显示在其他应用上层」权限，请在系统设置中允许</string>
+
+    <!-- 系统声音开关 / 未关闭房间提示 -->
+    <string name="audio_switch_label">共享系统声音（手机正在播放的声音）</string>
+    <string name="room_exists_title">还有未关闭的房间</string>
+    <string name="room_exists_message">Piik 仍在后台运行。是否直接进入这个房间？（不会重新开一个）</string>
+    <string name="room_exists_enter">进入房间</string>
+    <string name="room_exists_cancel">取消</string>
 </resources>

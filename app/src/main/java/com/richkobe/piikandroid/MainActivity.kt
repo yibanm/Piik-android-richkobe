@@ -2,6 +2,7 @@ package com.richkobe.piikandroid
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -23,7 +24,9 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 
 /** Home: watch an invite link, or host from this phone. */
 class MainActivity : Activity() {
@@ -32,7 +35,13 @@ class MainActivity : Activity() {
     private lateinit var hostStatus: TextView
     private lateinit var hostPrimary: Button
     private lateinit var hostStop: Button
+    private lateinit var floatSwitch: Switch
+    private lateinit var audioSwitch: Switch
     private var openHostWhenReady = false
+    /** 用户点了悬浮球开关 → 去系统授权页了；回来时若已授权则补开悬浮球。 */
+    private var pendingFloatBall = false
+    /** 为真时表示正在用代码同步开关 UI（非用户点击），抑制其回调，避免重复触发业务逻辑。 */
+    private var syncingSwitch = false
 
     private val prefs by lazy { getSharedPreferences("piik", MODE_PRIVATE) }
     private val hostListener: () -> Unit = { renderHost() }
@@ -49,6 +58,29 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 用户从系统「显示在其他应用上层」授权页返回：若已授权且之前想开，则补开。
+        syncingSwitch = true
+        try {
+            if (pendingFloatBall) {
+                pendingFloatBall = false
+                if (FloatingBallService.canDrawOverlays(this)) {
+                    floatSwitch.isChecked = FloatingBallService.start(this)
+                } else {
+                    floatSwitch.isChecked = false
+                    Toast.makeText(this, getString(R.string.float_need_permission), Toast.LENGTH_LONG).show()
+                }
+            } else {
+                // 悬浮球可能被收起（停止共享时自动收起，或通知栏收起），同步开关状态。
+                floatSwitch.isChecked = FloatingBallService.visible()
+            }
+            audioSwitch.isChecked = !HostState.systemAudioMuted
+        } finally {
+            syncingSwitch = false
+        }
     }
 
     override fun onDestroy() {
@@ -127,6 +159,36 @@ class MainActivity : Activity() {
         startActivity(Intent(this, WebActivity::class.java).putExtra(WebActivity.EXTRA_MODE, WebActivity.MODE_HOST))
     }
 
+    /**
+     * 房间已在后台运行时点「开始共享」：不重新开一个，先问用户是进入现有房间还是取消。
+     * launcher 页面检测到已有房间时本身就显示「进入」按钮（上游 LauncherForm 行为），
+     * 这里只是把提示做明确，避免用户以为要重新建房间。
+     */
+    private fun confirmEnterRunningRoom() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.room_exists_title))
+            .setMessage(getString(R.string.room_exists_message))
+            .setPositiveButton(getString(R.string.room_exists_enter)) { _, _ -> openHostPage() }
+            .setNegativeButton(getString(R.string.room_exists_cancel), null)
+            .show()
+    }
+
+    /** 悬浮球开关：Android 6+ 悬浮窗权限无法静默授予，先引导授权，授权后再由 onResume 补开。 */
+    private fun toggleFloatingBall(on: Boolean) {
+        if (!on) {
+            FloatingBallService.stop(this)
+            floatSwitch.isChecked = false
+            return
+        }
+        if (!FloatingBallService.canDrawOverlays(this)) {
+            pendingFloatBall = true
+            Toast.makeText(this, getString(R.string.float_need_permission), Toast.LENGTH_LONG).show()
+            FloatingBallService.requestPermission(this)
+            return
+        }
+        floatSwitch.isChecked = FloatingBallService.start(this)
+    }
+
     private fun renderHost() {
         when (HostState.phase) {
             HostState.Phase.STOPPED -> {
@@ -203,6 +265,24 @@ class MainActivity : Activity() {
 
     private fun gap(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(h)) }
 
+    /** 一行开关：左侧标题（说明写在标题的括号里），右侧 Switch。 */
+    private fun switchRow(title: String, initial: Boolean, onChange: (Boolean) -> Unit): Pair<View, Switch> {
+        val sw = Switch(this).apply {
+            isChecked = initial
+            // syncingSwitch 为真时说明是 onResume 里用代码同步 UI 状态（不是用户点击），
+            // 不应触发业务回调（否则会去 start/stop 悬浮球、改静音标志），只反映现状。
+            setOnCheckedChangeListener { _, checked -> if (!syncingSwitch) onChange(checked) }
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+            addView(text(title, 14f, TEXT), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(sw)
+        }
+        return row to sw
+    }
+
     private fun buildUi(): View {
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -268,7 +348,8 @@ class MainActivity : Activity() {
         host.addView(hostStatus)
         host.addView(gap(12))
         hostPrimary = button(getString(R.string.host_button_start), true) {
-            if (HostState.phase == HostState.Phase.RUNNING) openHostPage() else startHosting()
+            // 房间已在后台跑：提示进入现有房间，而不是静默重开一个新的。
+            if (HostState.phase == HostState.Phase.RUNNING) confirmEnterRunningRoom() else startHosting()
         }
         host.addView(hostPrimary, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         hostStop = button(getString(R.string.host_button_stop), false) { PiikService.stop(this) }
@@ -276,6 +357,23 @@ class MainActivity : Activity() {
         host.addView(hostStop, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         host.addView(gap(8))
         host.addView(button(getString(R.string.host_button_debug_log), false) { saveDebugLog() }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
+        host.addView(gap(10))
+
+        // 系统声音开关：默认开（引擎共享屏幕时无条件采集系统声音）。关掉后
+        // AudioSession 把系统声音 PCM 换成静音，麦克风与房间语音不受影响。
+        val audioRow = switchRow(getString(R.string.audio_switch_label), initial = !HostState.systemAudioMuted) { checked ->
+            HostState.systemAudioMuted = !checked
+        }
+        audioSwitch = audioRow.second
+        host.addView(audioRow.first)
+
+        // 悬浮球开关：常驻屏幕边缘的小球，在别的 App 里也能开始 / 停止共享。
+        val floatRow = switchRow(getString(R.string.float_switch_label), initial = FloatingBallService.visible()) { checked ->
+            toggleFloatingBall(checked)
+        }
+        floatSwitch = floatRow.second
+        host.addView(floatRow.first)
+
         column.addView(host)
         column.addView(gap(22))
 
