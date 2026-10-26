@@ -7,16 +7,22 @@
 # They are ordinary Go executables named lib*.so so Android installs them into
 # the app's native library directory, the one place apps may execute files.
 #
-# Requirements: git, Go >= 1.26, Node >= 22 with npm (Piik's web UI build).
+# Requirements: git, Go >= 1.27.3, Node >= 24 (<27) with npm (Piik's web UI build).
+#   版本取自上游 v2.4.1 的 go.mod（go 1.27.3）与 package.json（engines.node ">=24.0.0 <27"）；
+#   低于此版本 Go 会因工具链版本不足直接拒绝构建。
 # Usage:  scripts/build-native.sh            (arm64 phones)
 #         ABIS="arm64-v8a x86_64" scripts/build-native.sh   (+ emulator)
 set -euo pipefail
 
 PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 # Pinned: the patch and the capture contract (protocol 7) were verified against it.
-# v2.3.0 — 带房间聊天（文字/表情/语音）与完整中文语言包；probeProtocol 仍为 7，
-# 补丁 0001-android-support.patch 经 git apply --check 验证可直接应用。
-PIIK_REF=${PIIK_REF:-da7218bf446ed57907a3e95402fff3b4b5c37b5f}
+# v2.4.1 — 远程同乐（共用键鼠/手柄）、分享声音与房间控制改进、连接恢复与采集兼容性修复；
+# 完整中文语言包（zh.ts 1049 行）。已核对：probeProtocol 仍为 7、Capabilities 字段未变、
+# 传给采集进程的参数集合与 v2.3.0 完全一致（含 --protocol-v7）、go.mod/go.sum 与 v2.3.0
+# md5 相同（无新依赖、无 cgo 风险）、工具链要求 go 1.27.3 / node >=24 <27 未变；
+# 补丁 0001-android-support.patch 经 git apply --check 验证可干净应用，其新建的
+# anet_android.go / dns_android.go 上游仍不存在（无撞车），依赖的 wlynxg/anet v0.0.5 在 go.mod 中。
+PIIK_REF=${PIIK_REF:-066e218d84a237db41d455975c89a002eb3d0d79}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
 ABIS=${ABIS:-arm64-v8a}
