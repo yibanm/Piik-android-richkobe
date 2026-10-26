@@ -36,6 +36,13 @@ class AudioSession(private val context: Context, private val ch: ShimChannel) {
                 ch.stderr("Piik capture unavailable: unsupported audio source")
                 return 2
             }
+            // AudioPlaybackCaptureConfiguration 是 Android 10 (API 29) 才引入的，
+            // 9 及以下没有任何公开 API 能采集系统播放声（REMOTE_SUBMIX 需系统签名）。
+            // 低版本如实报错退出，让引擎把共享降级为「无声画面」，麦克风不受影响。
+            if (android.os.Build.VERSION.SDK_INT < 29) {
+                ch.stderr("Piik capture unavailable: sharing system audio requires Android 10 or newer")
+                return 2
+            }
         }
 
         // Q or end of stdin stops the capture (also while waiting for consent).

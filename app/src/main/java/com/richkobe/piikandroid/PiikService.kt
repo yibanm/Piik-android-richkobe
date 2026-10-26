@@ -174,7 +174,10 @@ class PiikService : Service() {
 
     private fun acquireWifiLock() {
         val wm = applicationContext.service<WifiManager>()
-        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "piik-hosting").apply {
+        // WIFI_MODE_FULL_LOW_LATENCY 是 API 29 才有；低版本回退到旧的 WIFI_MODE_FULL。
+        val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL
+        wifiLock = wm.createWifiLock(mode, "piik-hosting").apply {
             setReferenceCounted(false)
             acquire()
         }

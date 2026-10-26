@@ -90,7 +90,10 @@ class CaptureServer(private val context: Context) {
         val encoders = Codecs.avcEncoders.map {
             CaptureProtocol.EncoderEntry(if (it.hardware) it.name else "${it.name} (software)", it.name)
         }
-        return CaptureProtocol.probe("android", build, encoders, systemAudio = true)
+        // 系统声音采集依赖 AudioPlaybackCaptureConfiguration（API 29）；低版本如实上报
+        // systemAudio=false，引擎据此不显示「共享系统声音」控件，避免用户点了没反应。
+        val systemAudio = Build.VERSION.SDK_INT >= 29
+        return CaptureProtocol.probe("android", build, encoders, systemAudio = systemAudio)
     }
 
     fun close() {
