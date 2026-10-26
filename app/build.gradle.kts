@@ -17,14 +17,15 @@ android {
         versionName = "2.4.1" // 跟随内置 Piik 引擎版本
     }
 
-    // 按 ABI 分包：现代 64 位机装 arm64 包，老 32 位设备装 armv7 包，各自只带自己
-    // 那套 .so。引擎单个 .so 就有 46MB，做成 universal 包会让所有人都白背另一套架构。
-    // 不出 x86_64：build-native.sh 默认不编它（只服务模拟器），且 32 位 x86 无真机需求。
+    // 按 ABI 分包：每个架构一个 APK，各自只含自己那套 .so。避免 universal 包让
+    // 用户白背用不到的架构——引擎单个 .so 就有 46MB。
+    // 目前只出 arm64-v8a：32 位 armeabi-v7a 需要 cgo + Android NDK 工具链
+    // （Go 对 android/arm 强制外部链接，纯 CGO_ENABLED=0 编不出来），见 build-native.sh。
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a")
+            include("arm64-v8a")
             isUniversalApk = false
         }
     }

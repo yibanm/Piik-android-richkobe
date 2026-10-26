@@ -82,29 +82,24 @@ jobs:
           fi
           exit $status
 
-      # 按 ABI 分包：assembleRelease 会产出 app-<abi>-release.apk 两个文件。
-      # 逐个重命名为「软件名-版本-架构.apk」，并核实每个包只含自己那套 .so。
-      - name: Name the APKs
+      # ABI 分包后产物名为 app-<abi>-release.apk（不再叫 app-release.apk）。
+      # 目前只出 arm64-v8a 一个包，重命名为「软件名-版本-架构.apk」并核实库齐全。
+      - name: Name the APK
         run: |
           version=$(grep -oE 'versionName = "[^"]+"' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           [ -n "$version" ] || { echo "::error::could not read versionName"; exit 1; }
+          apk=$(ls app/build/outputs/apk/release/app-*-release.apk 2>/dev/null | head -1)
+          [ -e "$apk" ] || { echo "::error::no APK produced under app/build/outputs/apk/release"; exit 1; }
+          abi=$(basename "$apk" | sed -E 's/^app-(.+)-release\.apk$/\1/')
+          # 核实包内确实带上了对应架构的库，避免空壳包发出去。
+          unzip -l "$apk" | grep -q "lib/$abi/" \
+            || { echo "::error::$apk 缺少 lib/$abi/ 库"; exit 1; }
+          name="Piik-Android-richkobe-v${version}-${abi}.apk"
+          cp "$apk" "$name"
+          echo "APK_NAME=$name" >> "$GITHUB_ENV"
           echo "APK_VERSION=$version" >> "$GITHUB_ENV"
-          names=""
-          for apk in app/build/outputs/apk/release/app-*-release.apk; do
-            [ -e "$apk" ] || { echo "::error::no split APK produced"; exit 1; }
-            abi=$(basename "$apk" | sed -E 's/^app-(.+)-release\.apk$/\1/')
-            # 核实包内确实带上了对应架构的库，避免空壳包发出去。
-            unzip -l "$apk" | grep -q "lib/$abi/" \
-              || { echo "::error::$apk 缺少 lib/$abi/ 库"; exit 1; }
-            name="Piik-Android-richkobe-v${version}-${abi}.apk"
-            cp "$apk" "$name"
-            names="$names $name"
-            echo "APK: $name ($(unzip -l "$apk" | grep -oE 'lib/[^/]+' | cut -d/ -f2 | sort -u | paste -sd+ -))"
-          done
-          echo "APK_NAMES<<EOF" >> "$GITHUB_ENV"
-          for n in $names; do echo "$n" >> "$GITHUB_ENV"; done
-          echo "EOF" >> "$GITHUB_ENV"
-          echo "APK_ABI=split" >> "$GITHUB_ENV"
+          echo "APK_ABI=$abi" >> "$GITHUB_ENV"
+          echo "APK: $name ($(unzip -l "$apk" | grep -oE 'lib/[^/]+' | cut -d/ -f2 | sort -u | paste -sd+ -))"
 
       - uses: actions/upload-artifact@v4
         with:

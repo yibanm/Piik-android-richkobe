@@ -25,7 +25,7 @@ PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 PIIK_REF=${PIIK_REF:-066e218d84a237db41d455975c89a002eb3d0d79}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
-ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}
+ABIS=${ABIS:-arm64-v8a}
 SKIP_CLOUDFLARED=${SKIP_CLOUDFLARED:-0}
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
