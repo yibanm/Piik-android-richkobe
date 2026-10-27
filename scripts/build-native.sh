@@ -171,8 +171,15 @@ needs_cgo() {
 # vendor 覆盖：go mod vendor 后把 loadavg_unix.go 换成直接返回错误的纯 Go 实现，
 # 整个包里不再有 C.getloadavg 引用。loadavg 仅用于系统负载统计，读取失败不影响
 # 核心投屏。操作幂等，多个 cgo ABI 重复执行无副作用。
+# 上游 v2.5.0 新增 mobile/（官方 Android 桥），本移植版不用它（走 cmd/piik-app +
+# capture-shim + 内置 WebView 路线）。但它没有独立 go.mod，属主 module 的一部分，
+# 而 mobile/cloudflared/fallback_test.go 引用了一批只有测试才需要的包
+# （cloudflare/cloudflared 的 connection/retry、rs/zerolog，且 quic-go 缺 go.sum 条目）——
+# go mod vendor 会解析 module 内所有包的测试依赖，于是 vendor 直接失败，cgo ABI 全挂。
+# 全仓库无任何包 import Piik/mobile（已 grep 核验），删掉它对 ./cmd/piik-app 构建零影响。
 prepare_vendor() {
   echo "==> vendoring deps and stubbing go-osstat/loadavg"
+  rm -rf "$PIIK/mobile" # 官方桥：依赖残缺会让 vendor 失败，且本移植版不使用
   (cd "$PIIK" && go mod vendor)
   cat > "$PIIK/vendor/github.com/mackerelio/go-osstat/loadavg/loadavg_unix.go" <<'STUB'
 //go:build !windows && cgo
