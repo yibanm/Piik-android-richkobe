@@ -8,7 +8,7 @@
 # the app's native library directory, the one place apps may execute files.
 #
 # Requirements: git, Go >= 1.27.3, Node >= 24 (<27) with npm (Piik's web UI build).
-#   版本取自上游 v2.4.1 的 go.mod（go 1.27.3）与 package.json（engines.node ">=24.0.0 <27"）；
+#   版本取自上游 v2.5.0 的 go.mod（go 1.27.3）与 package.json（engines.node ">=24.0.0 <27"）；
 #   低于此版本 Go 会因工具链版本不足直接拒绝构建。
 # Usage:  scripts/build-native.sh            (arm64 phones)
 #         ABIS="arm64-v8a x86_64" scripts/build-native.sh   (+ emulator)
@@ -16,13 +16,17 @@ set -euo pipefail
 
 PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 # Pinned: the patch and the capture contract (protocol 7) were verified against it.
-# v2.4.1 — 远程同乐（共用键鼠/手柄）、分享声音与房间控制改进、连接恢复与采集兼容性修复；
-# 完整中文语言包（zh.ts 1049 行）。已核对：probeProtocol 仍为 7、Capabilities 字段未变、
-# 传给采集进程的参数集合与 v2.3.0 完全一致（含 --protocol-v7）、go.mod/go.sum 与 v2.3.0
-# md5 相同（无新依赖、无 cgo 风险）、工具链要求 go 1.27.3 / node >=24 <27 未变；
-# 补丁 0001-android-support.patch 经 git apply --check 验证可干净应用，其新建的
-# anet_android.go / dns_android.go 上游仍不存在（无撞车），依赖的 wlynxg/anet v0.0.5 在 go.mod 中。
-PIIK_REF=${PIIK_REF:-066e218d84a237db41d455975c89a002eb3d0d79}
+# v2.5.0 — Android 共享与触控控制进入共享运行时（#504）、悬浮工具输入焦点修复（#507）。
+# 已核对：probeProtocol 仍为 7；Capabilities 仅新增 remoteInput/captureBorderControl
+# 两个 omitempty 字段（Kotlin probe JSON 不传即兼容，DisallowUnknownFields 不受影响）；
+# 采集参数集不变（--probe/--protocol-v7/--capture-video/--encoded-video 均在）；
+# go.mod 仍 go 1.27.3、engines node >=24<27（工具链要求不变）；vite 仍无 build.target
+# （dist 转译+门禁链路继续有效）；版本变量搬家：BuildRevision 从 cmd/piik-app 移至
+# internal/app/buildinfo 包的 Revision（见下方 LDFLAGS）；上游新增 mobile/ 目录为官方
+# 版自己的桥，与 cmd/piik-app+capture-shim 路线不冲突。
+# 补丁 0001-android-support.patch 已在纯净 v2.5.0 克隆上 git apply --check 验证可干净应用，
+# 其新建的 anet_android.go / dns_android.go 上游仍不存在（无撞车），依赖的 wlynxg/anet 在 go.mod 中。
+PIIK_REF=${PIIK_REF:-499789671c7530b7364818b9c07123f3f290ebad}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
 ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}
@@ -123,7 +127,8 @@ if [ "${SKIP_WEB:-0}" != 1 ]; then
 fi
 
 # -checklinkname=0: pion's Android interface listing (wlynxg/anet) needs it.
-LDFLAGS="-s -w -checklinkname=0 -X github.com/TNTcraftHIM/Piik/internal/app.BuildRevision=${PIIK_REF:0:12}-android"
+# v2.5.0: revision var moved to internal/app/buildinfo.Revision (was internal/app.BuildRevision).
+LDFLAGS="-s -w -checklinkname=0 -X github.com/TNTcraftHIM/Piik/internal/app/buildinfo.Revision=${PIIK_REF:0:12}-android"
 
 # 找 NDK（armeabi-v7a / x86_64 的 cgo 链接需要它的 clang）。CI runner 预装并导出
 # ANDROID_NDK_HOME；本机缺失时按 ANDROID_HOME/ndk/* 兜底探测。

@@ -85,7 +85,7 @@ index 7634c42..f21ebcf 100644
  	if err != nil {
  		return err
 diff --git a/internal/app/lan/addresses.go b/internal/app/lan/addresses.go
-index 7a1e3c0..455102b 100644
+index ebce695..3738451 100644
 --- a/internal/app/lan/addresses.go
 +++ b/internal/app/lan/addresses.go
 @@ -4,6 +4,8 @@ import (
@@ -96,8 +96,8 @@ index 7a1e3c0..455102b 100644
 +	"runtime"
  	"sort"
  	"strings"
- )
-@@ -13,9 +15,36 @@ type Address struct {
+ 
+@@ -15,9 +17,37 @@ type Address struct {
  	Name    string `json:"name"`
  }
  
@@ -126,19 +126,20 @@ index 7a1e3c0..455102b 100644
  // media interfaces, which remain owned by ICE and the operating system.
  func List() ([]Address, error) {
 +	if runtime.GOOS == "android" {
-+		// Android 11+ denies apps the netlink request behind net.Interfaces.
++		// Android 11+ denies apps the netlink request behind interface
++		// enumeration; the host app passes the real addresses instead.
 +		if listed := androidAddresses(os.Getenv("PIIK_LAN_ADDRESSES")); len(listed) > 0 {
 +			return listed, nil
 +		}
 +	}
- 	interfaces, err := net.Interfaces()
+ 	interfaces, err := anet.Interfaces()
  	if err != nil {
  		return nil, fmt.Errorf("list network interfaces: %w", err)
 diff --git a/internal/app/nativecapture/probe.go b/internal/app/nativecapture/probe.go
-index cc30fcb..22ea89b 100644
+index 290458e..26dc930 100644
 --- a/internal/app/nativecapture/probe.go
 +++ b/internal/app/nativecapture/probe.go
-@@ -156,7 +156,7 @@ func decodeProbe(payload []byte) (Capabilities, error) {
+@@ -160,7 +160,7 @@ func decodeProbe(payload []byte) (Capabilities, error) {
  	}
  	if capabilities.Protocol != probeProtocol ||
  		(capabilities.Platform != "windows" && capabilities.Platform != "darwin" &&

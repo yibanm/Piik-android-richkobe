@@ -15,7 +15,7 @@
 - 应用名与应用内标题：**Piik Android richkobe**；包名：`com.richkobe.piikandroid`。
 - 壳层界面（主页 / 通知 / 提示 / 错误信息）全部汉化；web 界面用上游自带的简体中文包，中文系统下自动生效，页面内也可手动切换。
 - 主页标题行新增 **GitHub 图标**（层叠质感 + 点击反馈），点击直达本仓库。
-- 内置引擎升级至 **Piik v2.4.1**：获得房间聊天（文字 / 表情 / 语音）、移动浏览器全屏修复、连接恢复与采集兼容性的一批修复、房间语音默认 64 kbps 与房主码率设置、分享麦克风、多站点授权管理，以及更完整的中文语言包。
+- 内置引擎升级至 **Piik v2.5.0**（上游首次纳入 Android 的版本）：在 v2.4.1 已有的房间聊天（文字 / 表情 / 语音）、移动浏览器全屏修复、连接恢复与采集兼容性修复、房间语音 64 kbps 与房主码率设置、分享麦克风、多站点授权管理、完整简体中文语言包基础上，进一步获得采集稳定性改进（换源 / 编码器输出变化时画面继续推进、低码率恢复、静止画面关键帧）、更顺的应用进入（启动失败原地重试、从浏览器返回保留连接、共享页面资源压缩）、更本地化的故障恢复（被拒输入不再撤销远控授权、连接失败保留健康会话），以及前端「手机远控电脑」组件（需房间内另有一台支持远控的电脑；Android 设备本身不能被控）。
 - **老设备白屏修复**：构建期把全部前端 js 降级到 Chrome 74 语法子集（esbuild + AST 门禁），运行期注入兼容垫片（Promise.allSettled / replaceAll / Object.hasOwn / structuredClone / .at() 等），Android 8/9 出厂 WebView 不再因语法过新而白屏；若仍加载失败会显示中文诊断页而非静默空白。
 - 新增 **悬浮球**：屏幕边缘可拖拽小球，点击展开菜单，在游戏或其他 App 里也能停止共享、跳回主控页（需授予「显示在其他应用上层」权限）。
 - 新增 **系统声音开关**：可只关掉「手机正在播放的声音」的共享，麦克风与房间语音不受影响。
@@ -34,7 +34,7 @@
 | 界面布局 | 与桌面端同一套 web 界面，控制条在画面下方 | 主控制条悬浮叠在画面上，纵向占用更省 |
 | 汉化 | 壳层（主页 / 通知 / 提示）全汉化；web 界面用上游内置简体中文包 | web 界面跟随上游语言包（含简体中文，中文系统自动生效） |
 | Android 专属附加 | 悬浮球（在其他 App 里停共享 / 回主页）、应用内系统声音开关、主机端返回键直接回主页的修复 | 浏览器形态不提供悬浮球、系统声音开关等 Android 原生控件 |
-| 内置引擎 | Piik v2.4.1 | Piik v2.5.0（比本仓库内置引擎新一个小版本） |
+| 内置引擎 | Piik v2.5.0 | Piik v2.5.0（版本一致；差异在打包形态与 Android 原生附加控件，见上） |
 
 说明：
 
@@ -111,9 +111,18 @@ scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app
 
 ## 已验证与未验证
 
-**v2.4.1 升级的验证边界（本仓库维护者，2026-10）**：只做静态核对，未重跑上游测试套件。已核对通过——补丁 `0001-android-support.patch` 经 `git apply --check` 可干净应用到 v2.4.1；采集契约 `probeProtocol` 仍为 7、`Capabilities` 结构体字段未变、引擎传给采集进程的命令行参数集合与 v2.3.0 完全一致（含 `--protocol-v7`）；`go.mod`/`go.sum` 与 v2.3.0 md5 相同（无新增依赖、无 cgo 风险）；工具链要求（Go 1.27.3 / Node ≥24 <27）与现有 CI 兼容；补丁新建的 `anet_android.go`/`dns_android.go` 上游仍不存在（无撞车），依赖的 `wlynxg/anet` 在 `go.mod` 中；`build-native.sh` 依赖的 `cmd/piik-app`、`npm run build:web`、`internal/app.BuildRevision` 在 v2.4.1 均存在。全部 Kotlin 代码通过本机 `compileReleaseKotlin` + `processReleaseResources` + `processReleaseManifest` 编译。**未做**：上游测试套件、协议校验器实测、Chromium 端到端、真机投屏——均待 CI 构建与真机验证。
+**v2.5.0 升级的验证边界（本仓库维护者，2026-10）**：本轮实跑了构建链，不止静态核对。已验证通过——
 
-以下为原移植版在 **v2.3.0** 上记录过的离线验证（保留作历史参考，非本仓库对 v2.4.1 重跑的结果）：
+- 补丁 `0001-android-support.patch` 在**纯净 v2.5.0 克隆**（`499789671c75…`）上 `git apply --check` 干净应用；反向校验与工作树 diff 一致。
+- **实跑** `GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/piik-app`：编译通过，产物 47.6 MB（未 strip，含 v2.5.0 新依赖 livekit/protocol v1.52.2 等）；`-X internal/app/buildinfo.Revision` 注入路径正确（**v2.5.0 版本变量搬家**：从 `cmd/piik-app` 的 `internal/app.BuildRevision` 移到 `internal/app/buildinfo` 包的 `Revision`）。
+- **实跑** `npm run build:web` + esbuild `--target=chrome74` 转译 + AST 门禁：`transpile gate: all dist js clean for chrome74 syntax subset`，`import.meta.url` 保留 2 处未被替换（chrome74 事故的核心回归点）。
+- 采集契约核对：`probeProtocol` 仍为 7；`Capabilities` 仅新增 `remoteInput`/`captureBorderControl` 两个 `omitempty` 字段——Kotlin probe JSON（`CaptureProtocol.kt`）不传即默认 false，字段集合仍是引擎结构子集，`DisallowUnknownFields` 安全。
+- Kotlin↔引擎传参链核对：`PIIK_LAN_ADDRESSES`（`lan/addresses.go`）、`PIIK_DNS_SERVERS`（`dns_android.go`）、`PIIK_ANDROID_CAPTURE_SOCKET`（`capture-shim/main.go`）、`PIIK_ANDROID_OPEN` marker（`browser/open.go` stderr）四个约定的读取点与 Kotlin 写入点一一对上。
+- 工具链要求（Go 1.27.3 / Node ≥24 <27）与现有 CI 兼容；`vite` 仍无 `build.target`（转译门禁继续有效）；上游 `mobile/` 目录是官方自己的桥，与 `cmd/piik-app` + shim 路线不冲突。
+
+**未做**：上游测试套件、协议校验器实测、Chromium 端到端、**真机投屏**——均待 CI 构建与真机验证。armeabi-v7a（cgo 外部链接）本轮只验了 arm64 纯 Go 路径，32 位构建待 CI。
+
+以下为原移植版在 **v2.3.0** 上记录过的离线验证（保留作历史参考，非本仓库对 v2.5.0 重跑的结果）：
 
 - 打过补丁的 Piik 引擎与 cloudflared 可为 Android 交叉编译，Piik 自己的测试在打补丁后通过。
 - 全部 Kotlin 代码针对 Android 15 SDK 编译通过。

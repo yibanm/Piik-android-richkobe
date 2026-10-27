@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 6
-        versionName = "2.5.0" // 应用版本独立演进（内置引擎仍为 Piik v2.4.1）
+        versionName = "2.5.0" // 应用版本独立演进（内置引擎为 Piik v2.5.0）
     }
 
     // 按 ABI 分包：每个架构一个 APK，各自只含自己那套 .so。避免 universal 包让
