@@ -71,12 +71,16 @@ class WebActivity : Activity() {
         root.addView(
             nav,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                // 用户指定左上角（原左下角会压住页面底部操作区）。
+                // 左上角（用户指定），但下移到网页头部行之下：贴顶会压住页面自己的
+                // logo/菜单行（真机截图证实）。
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                setMargins(dp(8), dp(8), 0, 0)
+                setMargins(dp(8), dp(52), 0, 0)
             },
         )
         updateNavVisibility()
+        // 内容避让系统手势条/导航栏：不设置时页面底部控件（公开/私密切换、房间号
+        // 输入）会被手势条压住（真机截图证实重叠）。
+        root.fitsSystemWindows = true
         setContentView(root)
         web.setBackgroundColor(Color.BLACK)
 
@@ -110,10 +114,11 @@ class WebActivity : Activity() {
         if (mode == MODE_HOST) {
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
-            if (saved != null) web.restoreState(saved)
-            // 重开运行中房间：优先回到用户实际停留的房间深链（WebActivity 记录），
-            // 引擎 OPEN marker 只报根路径，只 load 它会回到 launcher 而非原房间。
-            else (HostState.roomPageUrl ?: HostState.pageUrl)?.let { lastHostPage = it; web.loadUrl(it) }
+            // 重开运行中房间一律回引擎根路径（launcher）：引擎端口与 piik-client-port
+            // 每次启动都变，壳层自记的「深链」必然过期（2026-10-27 真机诊断证实：
+            // 记到的 ?debug=1 / /client 旧链加载后连不上，表现为「无法访问」与
+            // 「要重新分享」）。上游 launcher 自带带新端口的「进入」按钮，交给它。
+            if (saved != null) web.restoreState(saved) else HostState.pageUrl?.let { lastHostPage = it; web.loadUrl(it) }
             if (HostState.pageUrl == null) onHostState()
         } else {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -130,7 +135,7 @@ class WebActivity : Activity() {
             mode = MODE_HOST
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
-            (HostState.roomPageUrl ?: HostState.pageUrl)?.let { if (web.url != it) web.loadUrl(it) }
+            HostState.pageUrl?.let { if (web.url != it) web.loadUrl(it) }
         } else if (url != null) {
             mode = MODE_WATCH
             web.loadUrl(url)
@@ -142,13 +147,9 @@ class WebActivity : Activity() {
     private fun onHostState() {
         when (HostState.phase) {
             HostState.Phase.RUNNING -> HostState.pageUrl?.let { page ->
-                // 引擎刚起来（首次或重启）：若有上次的房间深链且引擎还认它，
-                // 直接回深链；否则回引擎报的根路径。roomPageUrl 在引擎停止时
-                // 已被 HostState 清空，故此处非空即代表「房间还在」。
-                val target = HostState.roomPageUrl ?: page
-                if (target != lastHostPage) {
-                    lastHostPage = target
-                    web.loadUrl(target)
+                if (page != lastHostPage) {
+                    lastHostPage = page
+                    web.loadUrl(page)
                 }
             }
             HostState.Phase.STARTING -> if (web.url == null) web.loadData(statusPage(getString(R.string.web_status_starting)), "text/html", "utf-8")
@@ -231,44 +232,56 @@ class WebActivity : Activity() {
         )
     }
 
-    /** 手表形态判定：v7a 包 + 物理小屏（smallestScreenWidthDp<300，不随旋转变化）。 */
+    /**
+     * 手表形态判定：**矮屏小屏**（smallestScreenWidthDp < 400 且 screenHeightDp < 480）。
+     * 2026-10-27 真机诊断推翻「手表=v7a」前提：用户的手表是 64 位设备、装 V8a 包
+     * （ABI 首位 arm64-v8a，320x393dp），按 ABI 门控会让手表完全拿不到压缩布局。
+     * 改按屏幕形态：手表屏高 ≤393dp 命中；手机（含 320x568 老小屏机）屏高 ≥560dp
+     * 不命中；纵横比不能用作判据（手机竖屏比例同样 <1）。media query 在 CSS 内兜底。
+     */
     private fun isWatchFormFactor(): Boolean {
-        val abi32 = Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a"
-        val small = resources.configuration.smallestScreenWidthDp < 300
-        return abi32 && small
+        val cfg = resources.configuration
+        return cfg.smallestScreenWidthDp < 400 && cfg.screenHeightDp < 480
     }
 
     private fun dp(v: Int) = android.util.TypedValue.applyDimension(
         android.util.TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics,
     ).toInt()
 
-    /** 半透明圆角导航按钮：小屏（手表）上也能点，且不遮挡主内容。 */
+    /**
+     * 导航按钮做成网页同款风格：Piik web UI 是深色圆角控件（卡片 #262b36、
+     * 圆角胶囊），原生灰底方按钮叠在上面格格不入（用户反馈）。改半透明深色
+     * 圆形 + 白色箭头，视觉上像页面自己的悬浮控件。
+     */
     private fun navButton(label: String, onClick: () -> Unit): android.widget.Button =
         android.widget.Button(this).apply {
             text = label
             isAllCaps = false
-            setTextColor(Color.WHITE)
-            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
-            alpha = 0.55f
+            setTextColor(Color.parseColor("#E9ECF5"))
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 18f)
             val bg = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.parseColor("#66000000"))
-                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor("#B3262B36")) // 网页卡片色 + 半透明
+                cornerRadius = dp(22).toFloat() // 正圆胶囊
             }
             background = bg
-            setPadding(dp(14), 0, dp(14), 0)
-            minimumWidth = dp(44)
-            minHeight = dp(40)
+            val size = dp(44)
+            minimumWidth = size
+            minimumHeight = size
+            setPadding(0, 0, 0, 0)
             stateListAnimator = null
             setOnClickListener { onClick() }
+            layoutParams = android.widget.LinearLayout.LayoutParams(size, size).apply {
+                marginEnd = dp(8)
+            }
         }
 
     /** 没有对应历史时禁用按钮（灰显），避免点了没反应像坏了。 */
     private fun updateNavVisibility() {
         if (::navBack.isInitialized) {
             navBack.isEnabled = web.canGoBack()
-            navBack.alpha = if (web.canGoBack()) 0.55f else 0.2f
+            navBack.alpha = if (web.canGoBack()) 0.9f else 0.3f
             navForward.isEnabled = web.canGoForward()
-            navForward.alpha = if (web.canGoForward()) 0.55f else 0.2f
+            navForward.alpha = if (web.canGoForward()) 0.9f else 0.3f
         }
     }
 
@@ -314,21 +327,11 @@ class WebActivity : Activity() {
 
         /**
          * SPA 路由用 pushState 切换，onPageFinished 不触发；WebView 的访问历史
-         * 变化（含 pushState）会走这里，是记录「用户实际停留的房间页」的唯一
-         * 可靠钩子。只记本地 host 的 launcher / host / join 路由，观看路由
-         * （/r/XXXX 带一次性 grant）不记——重开时 grant 已失效。
+         * 变化（含 pushState）会走这里，是刷新前进/后退按钮状态的唯一可靠钩子。
          */
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
             updateNavVisibility()
-            if (mode != MODE_HOST) return
-            val u = url?.let { Uri.parse(it) } ?: return
-            val p = u.path ?: return
-            if ((u.host == "127.0.0.1" || u.host == "localhost") &&
-                (p == "/" || p == "/client" || p == "/client/" || p == "/join" || p == "/join/")
-            ) {
-                HostState.noteRoomPage(url)
-            }
         }
     }
 
@@ -418,6 +421,13 @@ class WebActivity : Activity() {
     // ---- JS bridge (clipboard / share, which WebView doesn't fully provide) ----
 
     private inner class Bridge {
+        /** 垫片回传的页内错误：记入引擎日志流，诊断复制/调试日志能带出真凶。 */
+        @JavascriptInterface
+        fun reportPageError(msg: String) {
+            HostState.appendLog("[page] $msg")
+            Log.w("PiikWeb", msg)
+        }
+
         @JavascriptInterface
         fun copyText(text: String) {
             runOnUiThread {

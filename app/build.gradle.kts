@@ -1,3 +1,4 @@
+import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,7 +14,7 @@ android {
         // 两处调用加运行时守卫，低版本自动降级（不采集系统声音、WiFi 锁用旧模式）。
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
+        versionCode = 9
         versionName = "2.5.0" // 应用版本独立演进（内置引擎为 Piik v2.5.0）
     }
 
@@ -32,8 +33,13 @@ android {
     }
 
     // Signs with PIIK_KEYSTORE when provided (stable key: updates install over
-    // each other); otherwise with the auto-generated debug key.
+    // each other); otherwise local key.properties (主密钥 richkobe-release.jks，CLAUDE.md 0.10，已 gitignore)；
+    // 两者都缺才回退 auto-generated debug key（仅限无密钥环境的临时构建，禁止发布）。
     val keystore = System.getenv("PIIK_KEYSTORE")
+    val kpFile = rootProject.file("key.properties")
+    val kp = Properties()
+    if (keystore == null && kpFile.exists()) kp.load(kpFile.inputStream())
+    val localStore = kp.getProperty("storeFile")
     signingConfigs {
         if (keystore != null) {
             create("release") {
@@ -42,13 +48,20 @@ android {
                 keyAlias = System.getenv("PIIK_KEY_ALIAS")
                 keyPassword = System.getenv("PIIK_KEY_PASSWORD")
             }
+        } else if (localStore != null) {
+            create("release") {
+                storeFile = file(localStore)
+                storePassword = kp.getProperty("storePassword")
+                keyAlias = kp.getProperty("keyAlias")
+                keyPassword = kp.getProperty("keyPassword")
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName(if (keystore != null) "release" else "debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

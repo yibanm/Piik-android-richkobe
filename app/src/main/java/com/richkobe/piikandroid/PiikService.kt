@@ -128,6 +128,10 @@ class PiikService : Service() {
 
     private fun onEngineLine(line: String) {
         HostState.appendLog(line)
+        // 房间就绪信号：引擎输出带 piik-client-port 的行只在用户创建/进入房间后出现
+        // （启动 banner 只报 /client 启动页）。用于「房间是否真的已创建」判断——
+        // 引擎一起动 phase 就 RUNNING，仅凭 phase 会在用户还没建房时误报。
+        if (line.contains("piik-client-port")) HostState.noteRoomActive()
         if (!line.startsWith(OPEN_MARKER)) return
         val url = line.removePrefix(OPEN_MARKER).trim()
         val host = Uri.parse(url).host ?: return
@@ -191,6 +195,8 @@ class PiikService : Service() {
     /** Called right after the user allows screen capture, before getMediaProjection(). */
     fun promoteForProjection(): Boolean {
         projecting = true
+        // 采集已授权启动 = 房间必然存在（引擎只在有房间时才请求采集）。
+        HostState.noteRoomActive()
         return goForeground()
     }
 

@@ -32,6 +32,21 @@ object Diagnostics {
     }
 
     /**
+     * Android 9（API<29）没有 MediaStore.Downloads（引用即抛 NoSuchFieldError，
+     * 真机手表上表现为「无法保存日志」）：走传统公共目录直写，需
+     * WRITE_EXTERNAL_STORAGE（manifest 已按 maxSdkVersion=28 声明，调用方负责授权）。
+     * 返回写入的完整路径，失败 null。
+     */
+    fun saveToDownloadsLegacy(name: String, bytes: ByteArray): String? = runCatching {
+        @Suppress("DEPRECATION")
+        val dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        if (!dir.exists() && !dir.mkdirs()) return@runCatching null
+        val f = File(dir, name)
+        f.writeBytes(bytes)
+        f.absolutePath
+    }.getOrNull()
+
+    /**
      * Everything useful for debugging hosting, as one text file in Downloads.
      * 返回**完整保存路径**（/storage/emulated/0/Download/<文件名>），toast 直接展示，
      * 用户能去文件管理器按路径找到（2026-10-27 用户要求，原来只给文件名）。
@@ -69,8 +84,14 @@ object Diagnostics {
 
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         val name = "piik-debug-$stamp.txt"
-        val uri = saveToDownloads(context, name, "text/plain", sb.toString().toByteArray()) ?: return null
-        return downloadsPath(context, uri) ?: "/storage/emulated/0/Download/$name"
+        val data = sb.toString().toByteArray()
+        // API 29+ 走 MediaStore（免权限）；Android 9 等老系统走公共目录直写（需存储权限，
+        // 调用方负责请求）——MediaStore.Downloads 在 <29 上引用即抛，手表真机实测。
+        if (Build.VERSION.SDK_INT >= 29) {
+            val uri = saveToDownloads(context, name, "text/plain", data) ?: return null
+            return downloadsPath(context, uri) ?: "/storage/emulated/0/Download/$name"
+        }
+        return saveToDownloadsLegacy(name, data)
     }
 
     /** MediaStore 行的真实文件系统路径（_data 列）；查不到返回 null 由调用方兜底。 */

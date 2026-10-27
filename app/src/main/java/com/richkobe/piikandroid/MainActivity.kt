@@ -144,6 +144,11 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         // Hosting works without them; shares just won't include audio.
         if (requestCode == REQUEST_HOST_PERMISSIONS) launchHost()
+        // 存储权限只为 <29 的调试日志直写；拒绝则提示失败，不重试不纠缠。
+        if (requestCode == REQUEST_STORAGE) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) doSaveDebugLog()
+            else Toast.makeText(this, getString(R.string.debug_log_failed), Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun launchHost() {
@@ -250,6 +255,17 @@ class MainActivity : Activity() {
     }
 
     private fun saveDebugLog() {
+        // Android 9 等 <29 走公共目录直写，需存储权限；29+ MediaStore 免权限。
+        if (Build.VERSION.SDK_INT < 29 &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_STORAGE)
+            return
+        }
+        doSaveDebugLog()
+    }
+
+    private fun doSaveDebugLog() {
         android.widget.Toast.makeText(this, getString(R.string.debug_log_collecting), android.widget.Toast.LENGTH_SHORT).show()
         Thread {
             val name = runCatching { Diagnostics.saveDebugLog(this) }.getOrNull()
@@ -288,7 +304,7 @@ class MainActivity : Activity() {
             appendLine("手表形态判定(v7a+小屏): ${Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a" && cfg.smallestScreenWidthDp < 300}")
             appendLine("WiFi: ${NetInfo.onWifi(this@MainActivity)} LAN: ${runCatching { NetInfo.lanAddresses(this@MainActivity) }.getOrDefault("?")}")
             appendLine("DNS: ${runCatching { NetInfo.dnsServers(this@MainActivity) }.getOrDefault("?")}")
-            appendLine("共享状态: ${HostState.phase} 房间深链: ${HostState.roomPageUrl ?: "(无)"} 引擎页: ${HostState.pageUrl ?: "(无)"}")
+            appendLine("共享状态: ${HostState.phase} 房间已创建: ${HostState.roomActive} 引擎页: ${HostState.pageUrl ?: "(无)"}")
             appendLine("---- 引擎最近输出(尾3000字) ----")
             append(HostState.logText().takeLast(3000))
         }
@@ -415,7 +431,9 @@ class MainActivity : Activity() {
         host.addView(gap(12))
         hostPrimary = button(getString(R.string.host_button_start), true) {
             // 房间已在后台跑：提示进入现有房间，而不是静默重开一个新的。
-            if (HostState.phase == HostState.Phase.RUNNING) confirmEnterRunningRoom() else startHosting()
+            // 判据用 roomActive（引擎输出房间就绪行或采集已授权），不能只用
+            // phase==RUNNING：引擎一起动就 RUNNING，用户还没建房时会误报。
+            if (HostState.roomActive) confirmEnterRunningRoom() else startHosting()
         }
         host.addView(hostPrimary, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         hostStop = button(getString(R.string.host_button_stop), false) { PiikService.stop(this) }
@@ -482,6 +500,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_HOST_PERMISSIONS = 1
+        private const val REQUEST_STORAGE = 2
         /** 右上角 GitHub 图标打开的仓库（本移植版）。 */
         private const val GITHUB_REPO = "https://github.com/yibanm/Piik-android-richkobe"
         private val BG = Color.parseColor("#0B0C10")

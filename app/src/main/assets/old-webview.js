@@ -291,4 +291,32 @@
       writable: true, configurable: true
     });
   }
+
+  // RTCRtpTransceiver.setCodecPreferences（Chrome 88+）：v2.5.0 音频路径有**无守卫**
+  // 调用（`c2.setCodecPreferences(l2)`），74 内核上该方法不存在 → TypeError → 渲染崩
+  // → 上游 RouteBoundary「无法访问」兜底页（真机诊断锁定）。补 no-op：codec 偏好是
+  // 优化项，老内核跳过即用默认 codec，语义正确。
+  try {
+    if (typeof window.RTCRtpTransceiver !== 'undefined' &&
+        typeof window.RTCRtpTransceiver.prototype.setCodecPreferences !== 'function') {
+      window.RTCRtpTransceiver.prototype.setCodecPreferences = function () {};
+    }
+  } catch (e) { note('setCodecPreferences shim failed: ' + e); }
+
+  // ---- 页内错误回传壳层：window 错误/未处理 rejection 实时送给 Android 记入引擎日志，
+  // 诊断复制能带出真凶（error boundary 吞掉的渲染异常靠上面的捕获阶段收集）。
+  function report(msg) {
+    try {
+      if (window.PiikAndroid && window.PiikAndroid.reportPageError) {
+        window.PiikAndroid.reportPageError(String(msg).slice(0, 500));
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('error', function (ev) {
+    report('pageError: ' + (ev.message || 'error') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || 0));
+  }, true);
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    report('pageRejection: ' + ((r && (r.message || r.stack)) || r));
+  });
 })();

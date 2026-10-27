@@ -20,6 +20,9 @@
          授予（系统对话框，非普通权限弹窗）；本应用不上 Play Store，不受该权限
          的商店政策限制。 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 仅 Android 9 及以下：调试日志走公共 Download 目录直写（<29 无 MediaStore.Downloads）。
+         29+ 用 MediaStore 免此权限，故 maxSdkVersion=28。 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
