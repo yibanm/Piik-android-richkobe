@@ -3,6 +3,7 @@ package com.richkobe.piikandroid
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -53,6 +54,7 @@ class MainActivity : Activity() {
         HostState.addListener(hostListener)
         renderHost()
         renderRecents()
+        maybePromptBatteryOptimization()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -189,6 +191,37 @@ class MainActivity : Activity() {
         floatSwitch.isChecked = FloatingBallService.start(this)
     }
 
+    /**
+     * 首启引导「忽略电池优化」：共享是长时前台任务，被 Doze/电池优化冻结会断流。
+     * 只问一次（prefs 记 battery_asked）；用户选「暂不」不再打扰，选「去允许」
+     * 走系统对话框（ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS，非普通权限弹窗）。
+     * API 23+ 才有该 intent；低版本直接跳过。
+     */
+    private fun maybePromptBatteryOptimization() {
+        if (Build.VERSION.SDK_INT < 23) return
+        if (prefs.getBoolean("battery_asked", false)) return
+        val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            // 已忽略（厂商白名单或用户此前设过）：记为已问过，不再弹。
+            prefs.edit().putBoolean("battery_asked", true).apply()
+            return
+        }
+        prefs.edit().putBoolean("battery_asked", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.battery_title))
+            .setMessage(getString(R.string.battery_message))
+            .setPositiveButton(getString(R.string.battery_allow)) { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(Uri.parse("package:$packageName")),
+                    )
+                }
+            }
+            .setNegativeButton(getString(R.string.battery_later), null)
+            .show()
+    }
+
     private fun renderHost() {
         when (HostState.phase) {
             HostState.Phase.STOPPED -> {
@@ -228,6 +261,29 @@ class MainActivity : Activity() {
                 ).show()
             }
         }.start()
+    }
+
+    /**
+     * 一键复制诊断信息：真机用户不会发 logcat，复制粘贴是唯一可行的反馈通道。
+     * 含应用版本、WebView 内核版本（老内核故障的第一线索）、引擎 stderr 尾部。
+     */
+    private fun copyDiagnostics() {
+        val wv = runCatching {
+            val vi = android.webkit.WebView.getCurrentWebViewPackage()
+            "${vi?.packageName} ${vi?.versionName}"
+        }.getOrDefault("unknown")
+        val text = buildString {
+            appendLine("Piik Android richkobe 诊断")
+            appendLine("应用版本: ${runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrDefault("?")}")
+            appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("WebView: $wv")
+            appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
+            appendLine("共享状态: ${HostState.phase}")
+            appendLine("---- 引擎最近输出 ----")
+            append(HostState.logText().takeLast(1500))
+        }
+        service<ClipboardManager>().setPrimaryClip(ClipData.newPlainText("Piik 诊断", text))
+        Toast.makeText(this, getString(R.string.diag_copied), Toast.LENGTH_LONG).show()
     }
 
     // ---- UI ----
@@ -357,6 +413,10 @@ class MainActivity : Activity() {
         host.addView(hostStop, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         host.addView(gap(8))
         host.addView(button(getString(R.string.host_button_debug_log), false) { saveDebugLog() }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
+        host.addView(gap(8))
+        // 诊断信息一键复制：真机出问题时用户不用会发日志，复制粘贴即可反馈。
+        // 内容含 WebView 内核版本、引擎 stderr 尾部、应用版本——定位老内核故障的关键。
+        host.addView(button(getString(R.string.diag_copy), false) { copyDiagnostics() }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
         host.addView(gap(10))
 
         // 系统声音开关：默认开（引擎共享屏幕时无条件采集系统声音）。关掉后

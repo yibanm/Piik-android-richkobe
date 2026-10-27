@@ -22,6 +22,12 @@
     var r = ev && ev.reason;
     note('unhandledrejection: ' + ((r && (r.message || r.stack)) || r));
   });
+  // 捕获阶段再收一份「路由/渲染期」错误：React 的 error boundary 会吞掉渲染异常
+  // （window.onerror 的冒泡阶段收不到），v2.5.0 的「无法访问」兜底页就是 boundary
+  // 接住的。捕获阶段先于 boundary 记录，诊断信息才拿得到真凶。
+  window.addEventListener('error', function (ev) {
+    note('routeError: ' + ((ev.message || 'error') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || 0)));
+  }, true);
 
   function showBlankDiag() {
     try {
@@ -210,5 +216,79 @@
         setTimeout(function () { throw e; });
       });
     };
+  }
+
+  // ---- v2.5.0 引擎新增的运行时依赖（2026-10-27 按 v2.5.0 dist 重扫补齐）----
+  // 升级引擎后必须重扫 dist：构建门禁只查语法，运行时 API 缺口只能靠这张清单兜。
+  // crypto.randomUUID（Chrome 92+）：v2.5.0 远控模块的类字段初始化直接调用，
+  // 无守卫，老内核一实例化就抛 TypeError → 渲染崩 → 「无法访问」兜底页。
+  if (typeof window.crypto === 'undefined') window.crypto = {};
+  if (typeof window.crypto.randomUUID !== 'function') {
+    window.crypto.randomUUID = function () {
+      var b = new Uint8Array(16);
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        window.crypto.getRandomValues(b);
+      } else {
+        for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+      }
+      // RFC 4122 v4：版本位与变体位
+      b[6] = (b[6] & 0x0f) | 0x40;
+      b[8] = (b[8] & 0x3f) | 0x80;
+      var h = [];
+      for (var j = 0; j < 16; j++) h.push((b[j] + 0x100).toString(16).slice(1));
+      return h.slice(0, 4).join('') + '-' + h.slice(4, 6).join('') + '-' +
+        h.slice(6, 8).join('') + '-' + h.slice(8, 10).join('') + '-' + h.slice(10, 16).join('');
+    };
+  }
+
+  // Promise.any + AggregateError（Chrome 85+）：v2.5.0 native/client.ts 用
+  // Promise.any 并发试多个端口，老内核上 Promise.any 是 undefined 直接抛。
+  if (typeof window.AggregateError !== 'function') {
+    window.AggregateError = function (errors, message) {
+      var e = new Error(message || 'All promises were rejected');
+      e.name = 'AggregateError';
+      e.errors = errors || [];
+      return e;
+    };
+    window.AggregateError.prototype = Object.create(Error.prototype);
+  }
+  if (typeof Promise !== 'undefined' && typeof Promise.any !== 'function') {
+    Promise.any = function (list) {
+      var items = Array.prototype.slice.call(list || []);
+      return new Promise(function (resolve, reject) {
+        if (items.length === 0) { reject(new window.AggregateError([], 'All promises were rejected')); return; }
+        var errs = [], left = items.length;
+        items.forEach(function (p, i) {
+          Promise.resolve(p).then(resolve, function (reason) {
+            errs[i] = reason;
+            if (--left === 0) reject(new window.AggregateError(errs, 'All promises were rejected'));
+          });
+        });
+      });
+    };
+  }
+
+  // Array.prototype.findLast / findLastIndex（Chrome 97+）：v2.5.0 前端用到，补守卫。
+  if (typeof Array.prototype.findLast !== 'function') {
+    Object.defineProperty(Array.prototype, 'findLast', {
+      value: function (fn, thisArg) {
+        for (var i = this.length - 1; i >= 0; i--) {
+          if (fn.call(thisArg, this[i], i, this)) return this[i];
+        }
+        return undefined;
+      },
+      writable: true, configurable: true
+    });
+  }
+  if (typeof Array.prototype.findLastIndex !== 'function') {
+    Object.defineProperty(Array.prototype, 'findLastIndex', {
+      value: function (fn, thisArg) {
+        for (var i = this.length - 1; i >= 0; i--) {
+          if (fn.call(thisArg, this[i], i, this)) return i;
+        }
+        return -1;
+      },
+      writable: true, configurable: true
+    });
   }
 })();

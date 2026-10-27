@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 悬浮球：Android 6+ 属高危权限，无法静默授予，需用户到系统设置手动打开。 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 忽略电池优化：共享是长时前台任务，被电池优化冻结会断流。首启引导用户
+         授予（系统对话框，非普通权限弹窗）；本应用不上 Play Store，不受该权限
+         的商店政策限制。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />

@@ -38,6 +38,8 @@ import android.widget.Toast
 class WebActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
+    private lateinit var navBack: android.widget.Button
+    private lateinit var navForward: android.widget.Button
     private var mode = MODE_WATCH
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
@@ -54,6 +56,25 @@ class WebActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // 网页前进/后退箭头：原生悬浮按钮叠在 WebView 上（左下角，半透明）。
+        // 不用 JS 注入实现——失败页（「无法访问」）里页面脚本可能已死，
+        // 原生按钮仍可用，而这正是最需要后退离开的场景。主机模式返回键
+        // 仍直接回原生主页（见 onBackPressed），箭头只负责网页内历史。
+        val nav = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+        }
+        navBack = navButton(getString(R.string.web_nav_back)) { if (web.canGoBack()) web.goBack() }
+        navForward = navButton(getString(R.string.web_nav_forward)) { if (web.canGoForward()) web.goForward() }
+        nav.addView(navBack)
+        nav.addView(navForward)
+        root.addView(
+            nav,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
+                setMargins(dp(12), 0, 0, dp(12))
+            },
+        )
+        updateNavVisibility()
         setContentView(root)
         web.setBackgroundColor(Color.BLACK)
 
@@ -87,7 +108,10 @@ class WebActivity : Activity() {
         if (mode == MODE_HOST) {
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
-            if (saved != null) web.restoreState(saved) else HostState.pageUrl?.let { lastHostPage = it; web.loadUrl(it) }
+            if (saved != null) web.restoreState(saved)
+            // 重开运行中房间：优先回到用户实际停留的房间深链（WebActivity 记录），
+            // 引擎 OPEN marker 只报根路径，只 load 它会回到 launcher 而非原房间。
+            else (HostState.roomPageUrl ?: HostState.pageUrl)?.let { lastHostPage = it; web.loadUrl(it) }
             if (HostState.pageUrl == null) onHostState()
         } else {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -104,7 +128,7 @@ class WebActivity : Activity() {
             mode = MODE_HOST
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
-            HostState.pageUrl?.let { if (web.url != it) web.loadUrl(it) }
+            (HostState.roomPageUrl ?: HostState.pageUrl)?.let { if (web.url != it) web.loadUrl(it) }
         } else if (url != null) {
             mode = MODE_WATCH
             web.loadUrl(url)
@@ -116,9 +140,13 @@ class WebActivity : Activity() {
     private fun onHostState() {
         when (HostState.phase) {
             HostState.Phase.RUNNING -> HostState.pageUrl?.let { page ->
-                if (page != lastHostPage) {
-                    lastHostPage = page
-                    web.loadUrl(page)
+                // 引擎刚起来（首次或重启）：若有上次的房间深链且引擎还认它，
+                // 直接回深链；否则回引擎报的根路径。roomPageUrl 在引擎停止时
+                // 已被 HostState 清空，故此处非空即代表「房间还在」。
+                val target = HostState.roomPageUrl ?: page
+                if (target != lastHostPage) {
+                    lastHostPage = target
+                    web.loadUrl(target)
                 }
             }
             HostState.Phase.STARTING -> if (web.url == null) web.loadData(statusPage(getString(R.string.web_status_starting)), "text/html", "utf-8")
@@ -178,6 +206,56 @@ class WebActivity : Activity() {
 
     private var oldWebViewSource: String? = null
 
+    /**
+     * 小屏（手表等）压缩布局。用 max-width media query 门控：只有物理小屏设备
+     * 命中，arm64/v7a 手机零影响——等价于「只改 v7a」（手表均为 32 位跑 v7a 包），
+     * 且不会误伤同样跑 v7a 包的 32 位手机。注入而非改 dist：防上游升级冲掉。
+     * 幂等：style 标签带 id，重复注入 no-op。
+     */
+    private fun injectSmallScreenCss(view: WebView) {
+        view.evaluateJavascript(
+            "(function(){if(document.getElementById('piik-small-screen'))return;" +
+                "var s=document.createElement('style');s.id='piik-small-screen';" +
+                "s.textContent=" + jsonQuote(SMALL_SCREEN_CSS) + ";" +
+                "(document.head||document.documentElement).appendChild(s);})();",
+            null,
+        )
+    }
+
+    private fun dp(v: Int) = android.util.TypedValue.applyDimension(
+        android.util.TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics,
+    ).toInt()
+
+    /** 半透明圆角导航按钮：小屏（手表）上也能点，且不遮挡主内容。 */
+    private fun navButton(label: String, onClick: () -> Unit): android.widget.Button =
+        android.widget.Button(this).apply {
+            text = label
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+            alpha = 0.55f
+            val bg = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#66000000"))
+                cornerRadius = dp(14).toFloat()
+            }
+            background = bg
+            setPadding(dp(14), 0, dp(14), 0)
+            minimumWidth = dp(44)
+            minHeight = dp(40)
+            stateListAnimator = null
+            setOnClickListener { onClick() }
+        }
+
+    /** 没有对应历史时禁用按钮（灰显），避免点了没反应像坏了。 */
+    private fun updateNavVisibility() {
+        if (::navBack.isInitialized) {
+            navBack.isEnabled = web.canGoBack()
+            navBack.alpha = if (web.canGoBack()) 0.55f else 0.2f
+            navForward.isEnabled = web.canGoForward()
+            navForward.alpha = if (web.canGoForward()) 0.55f else 0.2f
+        }
+    }
+
     // ---- WebView clients ----
 
     private inner class Client : WebViewClient() {
@@ -197,11 +275,14 @@ class WebActivity : Activity() {
             // 模块脚本在此之前已解析执行（老内核直接 SyntaxError → 白屏）。
             injectOldWebViewShims(view)
             injectIceFix(view, url)
+            injectSmallScreenCss(view)
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             injectOldWebViewShims(view)
             injectIceFix(view, url)
+            injectSmallScreenCss(view)
+            updateNavVisibility()
             // Piik's host page talks to the engine on this phone over WebRTC.
             // WebView hides local addresses behind mDNS names unless the page
             // has microphone access, and those names can't be resolved without
@@ -212,6 +293,25 @@ class WebActivity : Activity() {
                 checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             ) {
                 view.evaluateJavascript(UNLOCK_LOCAL_ADDRESSES, null)
+            }
+        }
+
+        /**
+         * SPA 路由用 pushState 切换，onPageFinished 不触发；WebView 的访问历史
+         * 变化（含 pushState）会走这里，是记录「用户实际停留的房间页」的唯一
+         * 可靠钩子。只记本地 host 的 launcher / host / join 路由，观看路由
+         * （/r/XXXX 带一次性 grant）不记——重开时 grant 已失效。
+         */
+        override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+            super.doUpdateVisitedHistory(view, url, isReload)
+            updateNavVisibility()
+            if (mode != MODE_HOST) return
+            val u = url?.let { Uri.parse(it) } ?: return
+            val p = u.path ?: return
+            if ((u.host == "127.0.0.1" || u.host == "localhost") &&
+                (p == "/" || p == "/client" || p == "/client/" || p == "/join" || p == "/join/")
+            ) {
+                HostState.noteRoomPage(url)
             }
         }
     }
@@ -411,8 +511,26 @@ class WebActivity : Activity() {
         const val MODE_HOST = "host"
         private const val REQUEST_WEB_PERMISSION = 3
 
-        private const val UNLOCK_LOCAL_ADDRESSES = """
-            (function () {
+        /**
+         * 小屏压缩布局（手表）。media query 门控：物理宽度 ≤ 480 CSS px 才命中，
+         * 手机（含 32 位 v7a 手机，宽度普遍 > 480）不受影响。压缩 Piik web UI 的
+         * 主要布局类（lr-* 为上游类名，grep dist css 确认）：缩小内边距/字号/
+         * 按钮高度，隐藏装饰性漫画提示，让控制条在小屏上放得下。
+         */
+        private const val SMALL_SCREEN_CSS =
+            "@media (max-width:480px){" +
+                ".lr-app{padding:8px!important}" +
+                ".lr-tile,.lr-sharing-section,.lr-sharing-panel,.lr-viewer-settings{padding:8px!important;margin:4px 0!important}" +
+                ".lr-btn{min-height:36px!important;padding:6px 10px!important;font-size:13px!important}" +
+                ".lr-input{min-height:34px!important;font-size:13px!important;padding:6px 8px!important}" +
+                ".lr-comic-tip-wrap,.lr-comic-tip,.lr-brand-sparkles{display:none!important}" +
+                ".lr-row-group{gap:6px!important}" +
+                ".lr-chip{padding:3px 8px!important;font-size:12px!important}" +
+                ".lr-toggle{min-height:32px!important}" +
+                "h1,h2{font-size:16px!important}h3{font-size:14px!important}" +
+                "}"
+
+        private const val UNLOCK_LOCAL_ADDRESSES = """            (function () {
               if (window.__piikUnlocked || !navigator.mediaDevices) return; window.__piikUnlocked = true;
               navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(function (s) { s.getTracks().forEach(function (t) { t.stop(); }); })

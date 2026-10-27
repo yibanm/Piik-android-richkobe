@@ -58,6 +58,18 @@
     <string name="web_save_failed">无法保存 %1$s</string>
     <string name="web_share_chooser">分享 Piik 邀请</string>
     <string name="web_back_keeps_hosting">Piik 仍在后台共享。可通过悬浮球、通知或主页停止。</string>
+    <string name="web_nav_back">←</string>
+    <string name="web_nav_forward">→</string>
+
+    <!-- 电池优化引导 -->
+    <string name="battery_title">允许 Piik 后台运行</string>
+    <string name="battery_message">系统的电池优化可能在共享途中冻结 Piik，导致画面中断或房间掉线。建议在接下来的系统对话框中选择「允许」，让共享更稳定。</string>
+    <string name="battery_allow">去允许</string>
+    <string name="battery_later">暂不</string>
+
+    <!-- 诊断信息复制 -->
+    <string name="diag_copy">复制诊断信息</string>
+    <string name="diag_copied">诊断信息已复制，可直接粘贴发送</string>
 
     <!-- 悬浮球 -->
     <string name="float_channel_name">悬浮球</string>

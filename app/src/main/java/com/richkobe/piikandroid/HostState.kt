@@ -13,6 +13,14 @@ object HostState {
     /** The Piik page to show: the launcher first, then the Host page. */
     @Volatile var pageUrl: String? = null
         private set
+    /**
+     * 用户实际停留过的房间深链（host 页 `/`、launcher `/client`）。引擎的
+     * OPEN marker 只报根路径，重开运行中房间时若只 load 根路径会回到 launcher
+     * 而非用户原来的房间页；WebActivity 在 onPageFinished 记录真实停留页，
+     * 重开时优先用它。进程级存活（服务不销毁即有效），引擎停止时清空。
+     */
+    @Volatile var roomPageUrl: String? = null
+        private set
     @Volatile var message: String? = null
         private set
 
@@ -37,8 +45,15 @@ object HostState {
     fun update(phase: Phase, pageUrl: String? = this.pageUrl, message: String? = null) {
         this.phase = phase
         this.pageUrl = if (phase == Phase.STOPPED || phase == Phase.FAILED) null else pageUrl
+        // 引擎停止/失败后房间已不存在，深链随之失效，避免下次误跳旧房间。
+        if (phase == Phase.STOPPED || phase == Phase.FAILED) roomPageUrl = null
         this.message = message
         main.post { listeners.forEach { it() } }
+    }
+
+    /** WebActivity 记录用户实际停留的房间页（仅本地 host/launcher 路径）。 */
+    fun noteRoomPage(url: String) {
+        roomPageUrl = url
     }
 
     /** Piik asked to open a non-local page (e.g. a release page). */
