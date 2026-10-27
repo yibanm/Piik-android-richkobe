@@ -13,8 +13,8 @@ android {
         // 两处调用加运行时守卫，低版本自动降级（不采集系统声音、WiFi 锁用旧模式）。
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.4.1" // 跟随内置 Piik 引擎版本
+        versionCode = 5
+        versionName = "2.5.0" // 应用版本独立演进（内置引擎仍为 Piik v2.4.1）
     }
 
     // 按 ABI 分包：每个架构一个 APK，各自只含自己那套 .so。避免 universal 包让
