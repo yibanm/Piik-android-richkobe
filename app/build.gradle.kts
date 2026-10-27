@@ -20,13 +20,13 @@ android {
     // 按 ABI 分包：每个架构一个 APK，各自只含自己那套 .so。避免 universal 包让
     // 用户白背用不到的架构——引擎单个 .so 就有 46MB。
     // armeabi-v7a（32 位）走 cgo + NDK clang 构建（Go 对 android/arm 强制外部链接），
-    // 见 build-native.sh 的 v7a 分支；三个 ABI 均含 cloudflared（公开邀请可用）。
-    // x86_64 面向模拟器（纯 Go 交叉编译）。
+    // 见 build-native.sh 的 needs_cgo 分支；两个 ABI 均含 cloudflared（公开邀请可用）。
+    // 注：arm64-v8a 即 64 位 ARM（用户口中的 V8a/arm64 是同一个包）。
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            include("arm64-v8a", "armeabi-v7a")
             isUniversalApk = false
         }
     }

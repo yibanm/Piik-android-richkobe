@@ -16,7 +16,7 @@
 - 壳层界面（主页 / 通知 / 提示 / 错误信息）全部汉化；web 界面用上游自带的简体中文包，中文系统下自动生效，页面内也可手动切换。
 - 主页标题行新增 **GitHub 图标**（层叠质感 + 点击反馈），点击直达本仓库。
 - 内置引擎升级至 **Piik v2.4.1**：获得房间聊天（文字 / 表情 / 语音）、移动浏览器全屏修复、连接恢复与采集兼容性的一批修复、房间语音默认 64 kbps 与房主码率设置、分享麦克风、多站点授权管理，以及更完整的中文语言包。
-- **老设备白屏修复**：构建期把全部前端 js 降级到 Chrome 61 语法（esbuild + ES2019 解析门禁），运行期注入兼容垫片（globalThis / Promise.allSettled / replaceAll / Object.hasOwn / structuredClone / .at() 等），Android 8/9 出厂 WebView 不再因语法过新而白屏；若仍加载失败会显示中文诊断页而非静默空白。
+- **老设备白屏修复**：构建期把全部前端 js 降级到 Chrome 74 语法子集（esbuild + AST 门禁），运行期注入兼容垫片（Promise.allSettled / replaceAll / Object.hasOwn / structuredClone / .at() 等），Android 8/9 出厂 WebView 不再因语法过新而白屏；若仍加载失败会显示中文诊断页而非静默空白。
 - 新增 **悬浮球**：屏幕边缘可拖拽小球，点击展开菜单，在游戏或其他 App 里也能停止共享、跳回主控页（需授予「显示在其他应用上层」权限）。
 - 新增 **系统声音开关**：可只关掉「手机正在播放的声音」的共享，麦克风与房间语音不受影响。
 - 修复 **主机端返回键**：投屏时按返回键直接回应用主页（共享在后台继续），不再卡在网页历史里、只能杀进程才能停共享。
@@ -30,7 +30,7 @@
 | | 本仓库（Piik Android richkobe） | 官方安卓版（v2.5.0 universal） |
 |---|---|---|
 | 运行形态 | 原生 Android 应用：主页、通知、悬浮球、系统声音开关均为 Android 原生控件；观看离开应用自动画中画 | 浏览器形态加载本地服务的 web 界面（实测：浏览器地址栏与导航栏常驻屏幕底部） |
-| 安装包 | 按 ABI 分三包：arm64-v8a ≈26 MB / armeabi-v7a ≈27 MB / x86_64（模拟器），各只含自己架构的引擎与隧道 | universal 单包 ≈14.4 MB，全架构合一包 |
+| 安装包 | 按 ABI 分两包：arm64-v8a ≈26 MB / armeabi-v7a ≈27 MB，各只含自己架构的引擎与隧道 | universal 单包 ≈14.4 MB，全架构合一包 |
 | 界面布局 | 与桌面端同一套 web 界面，控制条在画面下方 | 主控制条悬浮叠在画面上，纵向占用更省 |
 | 汉化 | 壳层（主页 / 通知 / 提示）全汉化；web 界面用上游内置简体中文包 | web 界面跟随上游语言包（含简体中文，中文系统自动生效） |
 | Android 专属附加 | 悬浮球（在其他 App 里停共享 / 回主页）、应用内系统声音开关、主机端返回键直接回主页的修复 | 浏览器形态不提供悬浮球、系统声音开关等 Android 原生控件 |
@@ -46,7 +46,7 @@
 APK 由 GitHub Actions 构建（需要 Google 的 Android SDK、Go 和 Node）：
 
 1. 打开本仓库 **Actions → Android APK**，进入最近一次构建。
-2. 下载 artifact（名如 `piik-android-richkobe-2.5.0-apks`），解压得到 `Piik-Android-richkobe-v2.5.0-arm64-v8a.apk`（64 位设备）、`Piik-Android-richkobe-v2.5.0-armeabi-v7a.apk`（32 位老设备）与 `Piik-Android-richkobe-v2.5.0-x86_64.apk`（模拟器），三包功能一致。文件名带版本号与架构。
+2. 下载 artifact（名如 `piik-android-richkobe-2.5.0-apks`），解压得到 `Piik-Android-richkobe-v2.5.0-arm64-v8a.apk`（64 位设备，即 V8a/arm64 机型）与 `Piik-Android-richkobe-v2.5.0-armeabi-v7a.apk`（32 位老设备），两包功能一致。文件名带版本号与架构。
 3. 传到手机打开安装（需允许文件管理器或浏览器「安装未知应用」）。
 
 打 `v*` tag 时会额外发布 **Releases**，附带 APK，可直接用手机下载安装。
@@ -132,7 +132,7 @@ scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app
 - 熄屏时共享暂停。
 - 主控页加载时麦克风指示灯会短暂闪烁（原因见上文）。
 - 在移动数据下服务多个观看者会消耗大量上行流量。Piik 的画质设置生效。
-- APK 下载约 26–27 MB（压缩后），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。arm64-v8a（64 位）、armeabi-v7a（32 位）与 x86_64（模拟器）三包功能一致，均含公开邀请模式。
+- APK 下载约 26–27 MB（压缩后，40 MB 以内），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。arm64-v8a（64 位）与 armeabi-v7a（32 位）两包功能一致，均含公开邀请模式。
 - Android 8.0 出厂 WebView（Chrome 58–60）不支持 ES Module，即使语法降级也可能白屏（应用会显示诊断页）；更新系统 WebView 即可。Android 9 及以上已覆盖。
 
 ## 许可

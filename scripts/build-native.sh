@@ -25,7 +25,7 @@ PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 PIIK_REF=${PIIK_REF:-066e218d84a237db41d455975c89a002eb3d0d79}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
-ABIS=${ABIS:-"arm64-v8a armeabi-v7a x86_64"}
+ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}
 SKIP_CLOUDFLARED=${SKIP_CLOUDFLARED:-0}
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -71,32 +71,54 @@ if [ "${SKIP_WEB:-0}" != 1 ]; then
   echo "==> Piik web interface"
   (cd "$PIIK" && npm ci --no-audit --no-fund && npm run build:web)
   # 老 WebView 兼容（白屏根因修复）：上游 vite.config.ts 未设 build.target，
-  # 产物含 Chrome 74（Android 9 出厂 WebView）无法解析的语法（?. / ?? / class
-  # fields——acorn ES2019 校验 10 个 js 中 8 个解析失败），SPA 起不来即白屏。
-  # 用上游 node_modules 自带的 esbuild 把 dist 里的 js 逐文件原地降级到
-  # chrome61（对齐 Android 8 出厂 WebView，兑现「Android 8.0 及以上」承诺；
-  # 零新增依赖）。只降语法不补运行时 API——缺的 globalThis / Promise.allSettled /
-  # replaceAll 等由壳层 WebActivity.kt 的 OLD_WEBVIEW_POLYFILLS 在 onPageStarted 注入。
-  echo "==> transpile dist js for old WebViews (esbuild --target=chrome61)"
+  # 产物含 Chrome 74（Android 9 出厂 WebView）无法解析的语法（?. / ?? / 逻辑赋值等，
+  # acorn 校验 10 个 js 中 8 个解析失败），SPA 起不来即白屏。
+  # 用上游 node_modules 自带的 esbuild 把 dist 里的 js 逐文件原地降级。
+  # target 必须=chrome74（要覆盖的最老可运行内核），**不能更低**：chrome61 会让
+  # esbuild 把 import.meta 替换成空对象（61 不支持），new URL(import.meta.url)
+  # 变 new URL(undefined) 直接 Invalid URL——连现代内核一起炸（2026-10-27 实测）。
+  # chrome74 原生支持 import.meta / 动态 import / 类字段，esbuild 只降级它缺的
+  # ?./??/逻辑赋值/数字分隔符等，两代内核都正常。只降语法不补运行时 API——缺的
+  # Promise.allSettled / replaceAll / Object.hasOwn 等由壳层 WebActivity.kt 的
+  # assets/old-webview.js 在 onPageStarted 注入。
+  echo "==> transpile dist js for old WebViews (esbuild --target=chrome74)"
   DIST=$PIIK/internal/server/webassets/dist
   for js in "$DIST"/assets/*.js; do
     [ -e "$js" ] || continue
-    (cd "$PIIK" && ./node_modules/.bin/esbuild "$js" --target=chrome61 --format=esm --outfile="$js" --allow-overwrite)
+    (cd "$PIIK" && ./node_modules/.bin/esbuild "$js" --target=chrome74 --format=esm --outfile="$js" --allow-overwrite)
   done
-  (cd "$PIIK" && ./node_modules/.bin/esbuild "$DIST"/index.html --loader=html --target=chrome61 --outfile="$DIST/index.html" --allow-overwrite 2>/dev/null || true)
-  # 门禁：转译后所有 js 必须能被 ES2019 解析器（≈Chrome 74 能力）接受，否则构建失败。
-  # acorn 不在上游依赖里，缺失时 --no-save 临时装（不污染 package.json）。
+  # 门禁：转译后不得残留 chrome74 缺的语法（AST 精确扫描，不用整档 ecmaVersion——
+  # 类字段/import.meta 在 chrome74 是合法的，ES2019 档会误杀）。acorn 不在上游
+  # 依赖里，缺失时 --no-save 临时装（不污染 package.json）。
   (cd "$PIIK" && node -e 'require("acorn")' 2>/dev/null || npm --prefix "$PIIK" i acorn --no-save --no-audit --no-fund >/dev/null)
   (cd "$PIIK" && node -e '
     const acorn = require("acorn"), fs = require("fs"), path = require("path");
     const dir = "internal/server/webassets/dist/assets";
+    const BAD_OPS = new Set(["??=", "||=", "&&="]);
+    function walk(n, cb) {
+      if (!n || typeof n !== "object") return;
+      if (Array.isArray(n)) { n.forEach(x => walk(x, cb)); return; }
+      if (typeof n.type === "string") cb(n);
+      for (const k of Object.keys(n)) if (k !== "type") walk(n[k], cb);
+    }
     let fail = 0;
     for (const f of fs.readdirSync(dir).filter(f => f.endsWith(".js"))) {
-      try { acorn.parse(fs.readFileSync(path.join(dir, f), "utf8"), { ecmaVersion: 2019, sourceType: "module" }); }
-      catch (e) { fail++; console.error("ES2019 PARSE FAIL:", f, e.message); }
+      const code = fs.readFileSync(path.join(dir, f), "utf8");
+      let ast;
+      try { ast = acorn.parse(code, { ecmaVersion: 2022, sourceType: "module" }); }
+      catch (e) { fail++; console.error("PARSE FAIL:", f, e.message); continue; }
+      const hits = new Set();
+      walk(ast, n => {
+        if (n.type === "ChainExpression") hits.add("optional chaining (?.)");
+        else if (n.type === "LogicalExpression" && n.operator === "??") hits.add("nullish (??)");
+        else if (n.type === "AssignmentExpression" && BAD_OPS.has(n.operator)) hits.add("logical assignment " + n.operator);
+      });
+      // 数字分隔符 1_000 是 chrome75+，chrome74 解析不了；esbuild 应已降级，正则兜底。
+      if (/\d_\d/.test(code)) hits.add("numeric separator");
+      if (hits.size) { fail++; console.error("CHROME74 SYNTAX LEFT:", f, [...hits].join(", ")); }
     }
-    if (fail) { console.error("transpile gate: " + fail + " file(s) still unparsable by ES2019"); process.exit(1); }
-    console.log("transpile gate: all dist js parsable as ES2019");
+    if (fail) { console.error("transpile gate: " + fail + " file(s) bad"); process.exit(1); }
+    console.log("transpile gate: all dist js clean for chrome74 syntax subset");
   ')
 fi
 
