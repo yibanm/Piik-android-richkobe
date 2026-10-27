@@ -98,10 +98,16 @@ for abi in $ABIS; do
     # "android/arm requires external (cgo) linking, but cgo is not enabled"。
     # 用 NDK clang 作 CC（API 26 对齐 minSdk），GOARM=7 面向主流 32 位机。
     CC7=$(find_ndk)
+    # Android Bionic 无 getloadavg(3)：开 cgo 后 go-osstat/loadavg 引用 C.getloadavg
+    # 会编译失败（arm64 纯 Go 路径跳过该文件，不受影响）。用 CGO_CFLAGS 注入返回 -1
+    # 的 static inline 存根：内联不产生外部符号，链接不会 undefined；go-osstat 降级为
+    # 读取失败，不影响核心投屏。详见 native/android_getloadavg_stub.h。
+    export CGO_CFLAGS="-include $ROOT/native/android_getloadavg_stub.h"
     echo "==> $abi: libpiik.so (cgo, CC=$CC7)"
     (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
     echo "==> $abi: libpiikcapture.so (cgo)"
     (cd "$ROOT/native/capture-shim" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+    unset CGO_CFLAGS
   else
     echo "==> $abi: libpiik.so"
     (cd "$PIIK" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
