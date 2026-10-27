@@ -139,19 +139,20 @@ if [ "$SKIP_CLOUDFLARED" != 1 ]; then
   # Same DNS fix as Piik: pure-Go binaries on Android otherwise can't resolve names.
   cp "$ROOT/native/android_dns.go" "$CFD/cmd/cloudflared/android_dns.go"
   for abi in $ABIS; do
-    # cloudflared 只为 64 位构建：其 android/arm（32 位）交叉编译未经上游验证，
-    # 强行编译失败会连累整个 CI（连 arm64 包都出不来）。壳层 PiikService 对
-    # libcloudflared.so 是「存在才启用隧道」，故 32 位设备缺它只是没有「公开邀请」
-    # 模式，Local / Site 两种共享照常可用。
-    if [ "$abi" = "armeabi-v7a" ]; then
-      echo "==> $abi: skip libcloudflared.so (32-bit tunnel not built)"
-      continue
-    fi
     arch=$(goarch "$abi")
-    echo "==> $abi: libcloudflared.so"
-    (cd "$CFD" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -mod=vendor -trimpath \
-      -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
-      -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
+    if [ "$abi" = "armeabi-v7a" ]; then
+      # 与 libpiik 同理：android/arm 强制 cgo 外部链接，用 NDK clang（API 26 对齐 minSdk）。
+      CC7=$(find_ndk)
+      echo "==> $abi: libcloudflared.so (cgo, CC=$CC7)"
+      (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -mod=vendor -trimpath \
+        -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
+        -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
+    else
+      echo "==> $abi: libcloudflared.so"
+      (cd "$CFD" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -mod=vendor -trimpath \
+        -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
+        -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
+    fi
   done
 fi
 
