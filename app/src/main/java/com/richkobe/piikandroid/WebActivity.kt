@@ -156,6 +156,28 @@ class WebActivity : Activity() {
 
     private var iceFixSource: String? = null
 
+    /**
+     * 老 WebView 兼容注入（幂等，内部有 __piikOldWv / __piikAndroid 守卫）：
+     * assets/old-webview.js 补运行时 API（globalThis、Promise.allSettled、
+     * replaceAll、Object.hasOwn、structuredClone、.at() 等）并收集页面错误，
+     * 白屏时展示中文诊断页；POLYFILLS 是剪贴板/分享/画中画桥接。
+     * onPageStarted 注入保证垫片先于页面脚本运行；onPageFinished 再注入
+     * 一次作为 SPA 路由切换后的兜底（守卫使其成为 no-op）。
+     */
+    private fun injectOldWebViewShims(view: WebView) {
+        try {
+            val script = oldWebViewSource
+                ?: assets.open("old-webview.js").bufferedReader().use { it.readText() }
+                    .also { oldWebViewSource = it }
+            view.evaluateJavascript(script, null)
+            view.evaluateJavascript(POLYFILLS, null)
+        } catch (e: Exception) {
+            Log.w("PiikWeb", "old-webview shims inject failed", e)
+        }
+    }
+
+    private var oldWebViewSource: String? = null
+
     // ---- WebView clients ----
 
     private inner class Client : WebViewClient() {
@@ -171,12 +193,15 @@ class WebActivity : Activity() {
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            // 兼容垫片必须先于页面自身脚本注入：onPageFinished 太晚，
+            // 模块脚本在此之前已解析执行（老内核直接 SyntaxError → 白屏）。
+            injectOldWebViewShims(view)
             injectIceFix(view, url)
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            injectOldWebViewShims(view)
             injectIceFix(view, url)
-            view.evaluateJavascript(POLYFILLS, null)
             // Piik's host page talks to the engine on this phone over WebRTC.
             // WebView hides local addresses behind mDNS names unless the page
             // has microphone access, and those names can't be resolved without
@@ -449,7 +474,8 @@ class WebActivity : Activity() {
                 'html.piik-android-pip video.piik-android-main{visibility:visible!important;position:fixed!important;' +
                 'inset:0!important;width:100vw!important;height:100vh!important;object-fit:contain!important;' +
                 'z-index:2147483647!important;background:#000!important}';
-              document.head.appendChild(style);
+              // onPageStarted 注入时 <head> 可能尚未解析出来，退回 documentElement。
+              (document.head || document.documentElement).appendChild(style);
               var last = '';
               setInterval(function () {
                 var best = null, area = 0;

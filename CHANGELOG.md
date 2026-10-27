@@ -1,21 +1,27 @@
 # 更新日志 / Changelog
 
-本项目版本号独立演进（v2.5.0 起不再跟随引擎版本，当前内置 Piik 引擎为 v2.4.1）。APK 按 ABI 分包：arm64-v8a（64 位 ARM）与 armeabi-v7a（32 位 ARM），两包功能一致，适用 **Android 8.0 及以上**设备。
+本项目版本号独立演进（v2.5.0 起不再跟随引擎版本，当前内置 Piik 引擎为 v2.4.1）。APK 按 ABI 分三包：arm64-v8a（64 位 ARM）、armeabi-v7a（32 位 ARM）与 x86_64（模拟器），功能一致，适用 **Android 8.0 及以上**设备。
 
 ## v2.5.0
 
-新增 **32 位 armeabi-v7a 分包**：老设备（32 位 ARM，含大量 Android 8/9 机型）现在也能安装。内置引擎仍为 Piik v2.4.1，功能与上一版一致。
+新增 **32 位 armeabi-v7a 分包** 与 **x86_64 模拟器分包**，并**修复老设备（Android 8/9 出厂 WebView）界面白屏**。内置引擎仍为 Piik v2.4.1。
 
 ### 本次更新
 
+- **修复**：老设备打开界面白屏。根因：上游前端构建未设语法降级目标，产物含 Chrome 74（Android 9 出厂 WebView）无法解析的语法（`?.`、`??`、类字段等，10 个 js 中 8 个解析失败）及缺失的运行时 API（`globalThis`、`Promise.allSettled`、`replaceAll`、`Object.hasOwn`、`structuredClone` 等），页面脚本直接报错、界面起不来。修复分两层：构建期用 esbuild 把全部前端 js 原地降级到 Chrome 61 语法（附 ES2019 解析门禁，不达标构建即失败）；运行期由应用在所有页面加载前注入兼容垫片补齐缺失 API。垫片同时收集页面错误——若界面仍加载失败，会显示中文诊断页并提示更新系统 WebView，不再静默白屏。
 - **新增**：armeabi-v7a（32 位）分包，与 arm64-v8a 包功能完全一致——含 cloudflared 隧道，「公开邀请」模式照常可用。32 位引擎与隧道经 NDK cgo 工具链构建（Go 对 android/arm 强制外部链接）；v2.4.1 时曾因缺工具链放弃 32 位支持，本版跑通。
-- **优化**：两包体积均低于 30 MB（arm64-v8a 约 26 MB、armeabi-v7a 约 27 MB）。
+- **新增**：x86_64 分包，面向 Android 模拟器（纯 Go 交叉编译），三包功能一致。
+- **优化**：各包体积均低于 30 MB（arm64-v8a 约 26 MB、armeabi-v7a 约 27 MB）。
 - **修正**：文档中「32 位设备暂不支持」「v7a 无公开邀请」等过时表述已全部清理。
+
+### 已知限制
+
+- Android 8.0 出厂 WebView（Chrome 58–60）不支持 ES Module 脚本加载，属浏览器能力墙，语法降级无法弥补；此类设备仍可能白屏（应用会显示诊断页说明原因）。解决办法：到应用商店把「Android System WebView / Chrome」更新到较新版本。Android 9（Chrome 66+/74）及以上为本版白屏修复的主要覆盖范围。
 
 ### 安装说明
 
-1. 64 位设备（绝大多数现代手机）下载 **Piik-Android-richkobe-v2.5.0-arm64-v8a.apk**；32 位老设备下载 **Piik-Android-richkobe-v2.5.0-armeabi-v7a.apk**。不确定架构就先装 arm64 包，装不上（提示与设备不兼容）再换 v7a 包。
-2. 系统要求：Android 8.0 及以上；64 位与 32 位 ARM 设备均有对应包。
+1. 64 位设备（绝大多数现代手机）下载 **Piik-Android-richkobe-v2.5.0-arm64-v8a.apk**；32 位老设备下载 **Piik-Android-richkobe-v2.5.0-armeabi-v7a.apk**；模拟器下载 **Piik-Android-richkobe-v2.5.0-x86_64.apk**。不确定架构就先装 arm64 包，装不上（提示与设备不兼容）再换 v7a 包。
+2. 系统要求：Android 8.0 及以上；64 位、32 位 ARM 设备与 x86_64 模拟器均有对应包。
 3. 从 v2.4.1 升级：包名同为 `com.richkobe.piikandroid`、versionCode 已提升，可直接覆盖安装，数据保留（受 debug key 签名限制，见 v2.4.1 安装说明第 5 条）。
 
 ## v2.4.1
@@ -55,7 +61,7 @@
 - 屏蔽截屏的应用（银行、Netflix 等 DRM 视频）共享时显示黑屏；通话与通知音不被采集。
 - 熄屏时共享暂停。
 - 悬浮球需要「显示在其他应用上层」权限，Android 6 以上无法静默授予，首次开启要手动到系统设置允许；部分定制系统可能额外限制悬浮窗。
-- **Android 8/9 老设备若界面白屏**：Piik 界面由内置 WebView 渲染，上游前端用较新的 JS 语法编译，而出厂 WebView 内核过旧（Android 8≈Chrome 58）可能无法解析导致白屏。解决办法是到应用商店把「Android System WebView / Chrome」更新到较新版本再打开；本机无法为上游前端做语法降级，故只能这样绕过。
+- **Android 8/9 老设备若界面白屏**：Piik 界面由内置 WebView 渲染，上游前端用较新的 JS 语法编译，而出厂 WebView 内核过旧（Android 8≈Chrome 58）可能无法解析导致白屏。解决办法是到应用商店把「Android System WebView / Chrome」更新到较新版本再打开；本机无法为上游前端做语法降级，故只能这样绕过。**该问题已在 v2.5.0 修复**（构建期语法降级 + 运行期兼容垫片），Android 8 出厂内核不支持 ES Module 的部分场景除外（见 v2.5.0 已知限制）。
 - **本版仅出 arm64-v8a 单包**：32 位 armeabi-v7a 因 Go 对 `android/arm` 强制 cgo 外部链接、当时未引入 NDK 工具链而未提供；该限制已在 v2.5.0 解除。老设备请先确认是 64 位（arm64）再下载。
 - 本版通过 CI 构建验证，**引擎升级后的实际投屏、悬浮球、静音开关、以及 Android 8/9 老设备的真实运行均未在真机验证**，遇到问题请在本仓库提 Issue。
 
