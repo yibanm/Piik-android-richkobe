@@ -118,9 +118,12 @@ scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app
 - **实跑** `npm run build:web` + esbuild `--target=chrome74` 转译 + AST 门禁：`transpile gate: all dist js clean for chrome74 syntax subset`，`import.meta.url` 保留 2 处未被替换（chrome74 事故的核心回归点）。
 - 采集契约核对：`probeProtocol` 仍为 7；`Capabilities` 仅新增 `remoteInput`/`captureBorderControl` 两个 `omitempty` 字段——Kotlin probe JSON（`CaptureProtocol.kt`）不传即默认 false，字段集合仍是引擎结构子集，`DisallowUnknownFields` 安全。
 - Kotlin↔引擎传参链核对：`PIIK_LAN_ADDRESSES`（`lan/addresses.go`）、`PIIK_DNS_SERVERS`（`dns_android.go`）、`PIIK_ANDROID_CAPTURE_SOCKET`（`capture-shim/main.go`）、`PIIK_ANDROID_OPEN` marker（`browser/open.go` stderr）四个约定的读取点与 Kotlin 写入点一一对上。
-- 工具链要求（Go 1.27.3 / Node ≥24 <27）与现有 CI 兼容；`vite` 仍无 `build.target`（转译门禁继续有效）；上游 `mobile/` 目录是官方自己的桥，与 `cmd/piik-app` + shim 路线不冲突。
+- 工具链要求（Go 1.27.3 / Node ≥24 <27）与现有 CI 兼容；`vite` 仍无 `build.target`（转译门禁继续有效）；上游 `mobile/` 目录是官方自己的桥，与 `cmd/piik-app` + shim 路线不冲突——但它在主 module 内且 `mobile/cloudflared/fallback_test.go` 的测试依赖残缺，会让 `go mod vendor` 失败，故构建脚本在 vendor 前删除该目录（全仓库无 `Piik/mobile` 引用，已 grep 核验）。
+- **CI 构建已通过**（Actions run `40477661849`，全部 step success）：两个 ABI 的三个原生产物均构建成功——arm64-v8a `libpiik.so` 49,611,046 B（47.3 MB）/ `libcloudflared.so` 28,770,598 B / `libpiikcapture.so` 3,539,238 B；armeabi-v7a（cgo + NDK clang）`libpiik.so` 47,410,896 B（45.2 MB）/ `libcloudflared.so` 27,219,904 B / `libpiikcapture.so` 3,300,904 B。
+- **可排除「CI 复用缓存旧产物」**：与 v2.4.1 引擎那轮构建（run `40462220571`）逐字节对比，`libpiik.so` 两个 ABI 都变了（arm64 48,955,686 → 49,611,046 B，+640 KiB；v7a 46,674,648 → 47,410,896 B，+719 KiB），而 cloudflared 与采集 shim 的字节数两轮**完全相同**（版本未变，理应如此）——即只有引擎被重编、且确实变大了，与 v2.5.0 新增依赖相符。
+- **armeabi-v7a 的 cgo 构建链本机也已跑通**（NDK r27，`CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7`）：删 `mobile/` 后 `go mod vendor` exit 0，三个产物全部构建成功并经 `file` 确认为 `ELF 32-bit LSB pie executable, ARM, EABI5, interpreter /system/bin/linker, for Android 26`。
 
-**未做**：上游测试套件、协议校验器实测、Chromium 端到端、**真机投屏**——均待 CI 构建与真机验证。armeabi-v7a（cgo 外部链接）本轮只验了 arm64 纯 Go 路径，32 位构建待 CI。
+**未做**：上游测试套件、协议校验器实测、Chromium 端到端、**真机投屏**——CI 只证明「能构建出包」，实际运行行为（共享、悬浮球、静音开关、老设备白屏修复效果）仍需真机验证。
 
 以下为原移植版在 **v2.3.0** 上记录过的离线验证（保留作历史参考，非本仓库对 v2.5.0 重跑的结果）：
 
@@ -141,7 +144,7 @@ scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app
 - 熄屏时共享暂停。
 - 主控页加载时麦克风指示灯会短暂闪烁（原因见上文）。
 - 在移动数据下服务多个观看者会消耗大量上行流量。Piik 的画质设置生效。
-- APK 下载约 26–27 MB（压缩后，40 MB 以内），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。arm64-v8a（64 位）与 armeabi-v7a（32 位）两包功能一致，均含公开邀请模式。
+- APK 下载约 26–27 MB（压缩后，40 MB 以内；实测 arm64-v8a 28,007,633 B、armeabi-v7a 28,861,219 B），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈45–47 MB，两 ABI 不同）、cloudflared 隧道（libcloudflared.so ≈26–27 MB）与采集 shim。arm64-v8a（64 位）与 armeabi-v7a（32 位）两包功能一致，均含公开邀请模式。
 - Android 8.0 出厂 WebView（Chrome 58–60）不支持 ES Module，即使语法降级也可能白屏（应用会显示诊断页）；更新系统 WebView 即可。Android 9 及以上已覆盖。
 
 ## 许可
