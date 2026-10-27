@@ -103,39 +103,51 @@ fi
 # -checklinkname=0: pion's Android interface listing (wlynxg/anet) needs it.
 LDFLAGS="-s -w -checklinkname=0 -X github.com/TNTcraftHIM/Piik/internal/app.BuildRevision=${PIIK_REF:0:12}-android"
 
-# 找 NDK（armeabi-v7a 的 cgo 链接需要它的 clang）。CI runner 预装并导出
+# 找 NDK（armeabi-v7a / x86_64 的 cgo 链接需要它的 clang）。CI runner 预装并导出
 # ANDROID_NDK_HOME；本机缺失时按 ANDROID_HOME/ndk/* 兜底探测。
-find_ndk() {
+find_ndk_dir() {
   local ndk=${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_LATEST_HOME:-}}}
   if [ -z "$ndk" ] && [ -n "${ANDROID_HOME:-}" ]; then
     ndk=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)
   fi
-  [ -n "$ndk" ] || { echo "armeabi-v7a 需要 Android NDK（设置 ANDROID_NDK_HOME），未找到" >&2; exit 1; }
-  local cc
-  cc=$(ls "$ndk"/toolchains/llvm/prebuilt/*/bin/armv7a-linux-androideabi26-clang 2>/dev/null | head -1)
-  [ -n "$cc" ] && [ -x "$cc" ] || { echo "NDK clang 不存在：$ndk/toolchains/llvm/prebuilt/*/bin/armv7a-linux-androideabi26-clang" >&2; exit 1; }
+  [ -n "$ndk" ] || { echo "cgo ABI 需要 Android NDK（设置 ANDROID_NDK_HOME），未找到" >&2; exit 1; }
+  echo "$ndk"
+}
+
+# 按 ABI 返回 NDK clang（API 26 对齐 minSdk）。
+ndk_cc() {
+  local ndk triple cc
+  ndk=$(find_ndk_dir)
+  case "$1" in
+    armeabi-v7a) triple=armv7a-linux-androideabi26-clang ;;
+    x86_64) triple=x86_64-linux-android26-clang ;;
+    *) echo "ndk_cc: ABI $1 不需要 NDK clang" >&2; exit 1 ;;
+  esac
+  cc=$(ls "$ndk"/toolchains/llvm/prebuilt/*/"bin/$triple" 2>/dev/null | head -1)
+  [ -n "$cc" ] && [ -x "$cc" ] || { echo "NDK clang 不存在：$ndk/toolchains/llvm/prebuilt/*/bin/$triple" >&2; exit 1; }
   echo "$cc"
 }
 
-for abi in $ABIS; do
-  arch=$(goarch "$abi")
-  out=$JNI/$abi
-  mkdir -p "$out"
-  if [ "$abi" = "armeabi-v7a" ]; then
-    # Go 对 android/arm（32 位）强制 cgo 外部链接：纯 CGO_ENABLED=0 会报
-    # "android/arm requires external (cgo) linking, but cgo is not enabled"。
-    # 用 NDK clang 作 CC（API 26 对齐 minSdk），GOARM=7 面向主流 32 位机。
-    CC7=$(find_ndk)
-    # Android Bionic 无 getloadavg(3)：开 cgo 后 go-osstat/loadavg 的 cgo 文件引用
-    # C.getloadavg 导致编译失败（arm64 纯 Go 路径跳过该文件，不受影响）。
-    # 注意：CGO_CFLAGS 注入存根头文件的方案已实测失败（stub.h 里的 #include <stdlib.h>
-    # 让 NDK 头文件在 cgo 的错误上下文里被重新解析，报 unexpected token）。改用
-    # vendor 覆盖：go mod vendor 后把 loadavg_unix.go 换成直接返回错误的纯 Go 实现，
-    # 整个包里不再有 C.getloadavg 引用。loadavg 仅用于系统负载统计，读取失败不影响
-    # 核心投屏。vendor 只在 v7a 分支创建；arm64 分支先于它执行且走默认 -mod=mod。
-    echo "==> $abi: vendoring deps and stubbing go-osstat/loadavg"
-    (cd "$PIIK" && go mod vendor)
-    cat > "$PIIK/vendor/github.com/mackerelio/go-osstat/loadavg/loadavg_unix.go" <<'STUB'
+# wlynxg/anet 对 android/arm 与 android/amd64 只有 cgo 实现（arm64 有纯 Go 路径），
+# 纯 CGO_ENABLED=0 会报 "requires external (cgo) linking"。这两个 ABI 走 NDK cgo。
+needs_cgo() {
+  case "$1" in
+    armeabi-v7a|x86_64) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Android Bionic 无 getloadavg(3)：开 cgo 后 go-osstat/loadavg 的 cgo 文件引用
+# C.getloadavg 导致编译失败（arm64 纯 Go 路径跳过该文件，不受影响）。
+# 注意：CGO_CFLAGS 注入存根头文件的方案已实测失败（stub.h 里的 #include <stdlib.h>
+# 让 NDK 头文件在 cgo 的错误上下文里被重新解析，报 unexpected token）。改用
+# vendor 覆盖：go mod vendor 后把 loadavg_unix.go 换成直接返回错误的纯 Go 实现，
+# 整个包里不再有 C.getloadavg 引用。loadavg 仅用于系统负载统计，读取失败不影响
+# 核心投屏。操作幂等，多个 cgo ABI 重复执行无副作用。
+prepare_vendor() {
+  echo "==> vendoring deps and stubbing go-osstat/loadavg"
+  (cd "$PIIK" && go mod vendor)
+  cat > "$PIIK/vendor/github.com/mackerelio/go-osstat/loadavg/loadavg_unix.go" <<'STUB'
 //go:build !windows && cgo
 
 package loadavg
@@ -147,10 +159,27 @@ func get() (*Stats, error) {
 	return nil, errors.New("getloadavg is not available on Android (Bionic)")
 }
 STUB
-    echo "==> $abi: libpiik.so (cgo, CC=$CC7)"
-    (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
-    echo "==> $abi: libpiikcapture.so (cgo)"
-    (cd "$ROOT/native/capture-shim" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+}
+
+for abi in $ABIS; do
+  arch=$(goarch "$abi")
+  out=$JNI/$abi
+  mkdir -p "$out"
+  if needs_cgo "$abi"; then
+    CC_NDK=$(ndk_cc "$abi")
+    prepare_vendor
+    # GOARM=7 只对 32 位 ARM 有意义，面向主流 32 位机。
+    if [ "$arch" = arm ]; then
+      echo "==> $abi: libpiik.so (cgo, CC=$CC_NDK)"
+      (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC_NDK" go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
+      echo "==> $abi: libpiikcapture.so (cgo)"
+      (cd "$ROOT/native/capture-shim" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC_NDK" go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+    else
+      echo "==> $abi: libpiik.so (cgo, CC=$CC_NDK)"
+      (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch CC="$CC_NDK" go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
+      echo "==> $abi: libpiikcapture.so (cgo)"
+      (cd "$ROOT/native/capture-shim" && CGO_ENABLED=1 GOOS=android GOARCH=$arch CC="$CC_NDK" go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+    fi
   else
     echo "==> $abi: libpiik.so"
     (cd "$PIIK" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
@@ -168,13 +197,21 @@ if [ "$SKIP_CLOUDFLARED" != 1 ]; then
   cp "$ROOT/native/android_dns.go" "$CFD/cmd/cloudflared/android_dns.go"
   for abi in $ABIS; do
     arch=$(goarch "$abi")
-    if [ "$abi" = "armeabi-v7a" ]; then
-      # 与 libpiik 同理：android/arm 强制 cgo 外部链接，用 NDK clang（API 26 对齐 minSdk）。
-      CC7=$(find_ndk)
-      echo "==> $abi: libcloudflared.so (cgo, CC=$CC7)"
-      (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -mod=vendor -trimpath \
-        -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
-        -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
+    if needs_cgo "$abi"; then
+      # 与 libpiik 同理：android/arm 与 android/amd64 均强制 cgo 外部链接，
+      # 用对应 ABI 的 NDK clang（API 26 对齐 minSdk）。
+      CC_NDK=$(ndk_cc "$abi")
+      if [ "$arch" = arm ]; then
+        echo "==> $abi: libcloudflared.so (cgo, CC=$CC_NDK)"
+        (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC_NDK" go build -mod=vendor -trimpath \
+          -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
+          -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
+      else
+        echo "==> $abi: libcloudflared.so (cgo, CC=$CC_NDK)"
+        (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch CC="$CC_NDK" go build -mod=vendor -trimpath \
+          -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
+          -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
+      fi
     else
       echo "==> $abi: libcloudflared.so"
       (cd "$CFD" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -mod=vendor -trimpath \
