@@ -98,16 +98,31 @@ for abi in $ABIS; do
     # "android/arm requires external (cgo) linking, but cgo is not enabled"。
     # 用 NDK clang 作 CC（API 26 对齐 minSdk），GOARM=7 面向主流 32 位机。
     CC7=$(find_ndk)
-    # Android Bionic 无 getloadavg(3)：开 cgo 后 go-osstat/loadavg 引用 C.getloadavg
-    # 会编译失败（arm64 纯 Go 路径跳过该文件，不受影响）。用 CGO_CFLAGS 注入返回 -1
-    # 的 static inline 存根：内联不产生外部符号，链接不会 undefined；go-osstat 降级为
-    # 读取失败，不影响核心投屏。详见 native/android_getloadavg_stub.h。
-    export CGO_CFLAGS="-include $ROOT/native/android_getloadavg_stub.h"
+    # Android Bionic 无 getloadavg(3)：开 cgo 后 go-osstat/loadavg 的 cgo 文件引用
+    # C.getloadavg 导致编译失败（arm64 纯 Go 路径跳过该文件，不受影响）。
+    # 注意：CGO_CFLAGS 注入存根头文件的方案已实测失败（stub.h 里的 #include <stdlib.h>
+    # 让 NDK 头文件在 cgo 的错误上下文里被重新解析，报 unexpected token）。改用
+    # vendor 覆盖：go mod vendor 后把 loadavg_unix.go 换成直接返回错误的纯 Go 实现，
+    # 整个包里不再有 C.getloadavg 引用。loadavg 仅用于系统负载统计，读取失败不影响
+    # 核心投屏。vendor 只在 v7a 分支创建；arm64 分支先于它执行且走默认 -mod=mod。
+    echo "==> $abi: vendoring deps and stubbing go-osstat/loadavg"
+    (cd "$PIIK" && go mod vendor)
+    cat > "$PIIK/vendor/github.com/mackerelio/go-osstat/loadavg/loadavg_unix.go" <<'STUB'
+//go:build !windows && cgo
+
+package loadavg
+
+import "errors"
+
+// Android Bionic 无 getloadavg(3)，原 cgo 实现编不过；覆盖为始终失败。
+func get() (*Stats, error) {
+	return nil, errors.New("getloadavg is not available on Android (Bionic)")
+}
+STUB
     echo "==> $abi: libpiik.so (cgo, CC=$CC7)"
-    (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
+    (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -mod=vendor -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
     echo "==> $abi: libpiikcapture.so (cgo)"
     (cd "$ROOT/native/capture-shim" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
-    unset CGO_CFLAGS
   else
     echo "==> $abi: libpiik.so"
     (cd "$PIIK" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
