@@ -113,7 +113,7 @@ scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app
 - 熄屏时共享暂停。
 - 主控页加载时麦克风指示灯会短暂闪烁（原因见上文）。
 - 在移动数据下服务多个观看者会消耗大量上行流量。Piik 的画质设置生效。
-- APK 下载约 28 MB（arm64，压缩后），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。
+- APK 下载约 26 MB（arm64，压缩后），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。
 
 ## 许可
 
