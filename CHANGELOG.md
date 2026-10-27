@@ -20,6 +20,9 @@
 
 ### 本次更新
 
+- **修复**：手机（含 64 位 V8a）launcher 页「创建房间」模式按钮消失。根因是上一版手表小屏压缩 CSS 的两处失误：media query 的 `max-width:480px` 按 CSS px（≈dp）判定，手机视口 360–430dp 全部命中；且隐藏装饰提示时误选了 Tooltip 的外壳类（包着触发按钮），把按钮连同提示一起藏掉。修复：门控改为「仅 32 位 v7a 包 + 物理小屏（smallestScreenWidthDp < 300，手表约 180–230dp、手机 ≥320dp）」双条件，V8a 包一行样式都不注入；隐藏目标改为提示气泡本身，不碰外壳。
+- **优化**：网页前进 / 后退箭头移到左上角（原左下角压住页面底部操作区）。
+- **优化**：调试日志保存后的提示改为显示完整路径（如 `/storage/emulated/0/Download/piik-debug-….txt`），可直接去文件管理器找到；「复制诊断信息」内容加详——新增设备型号、屏幕尺寸与密度、手表形态判定、WiFi/局域网/DNS、房间深链，引擎输出扩到 3000 字。
 - **修复**：老内核（Android 9 出厂 WebView 74）打开主控页显示「无法访问 / 刷新页面」。根因：v2.5.0 前端新增 `crypto.randomUUID`（Chrome 92+）、`Promise.any`（85+）、`findLast`（97+）等运行时 API，而兼容垫片清单仍按 v2.4.1 的产物扫描——语法降级门禁只查语法、查不出运行时 API 缺口，老内核一渲染就抛异常，被上游路由兜底页接住显示「无法访问」（群友 WebView 101 具备这些 API 故正常）。修复：按 v2.5.0 dist 重扫补齐三个 API（randomUUID 用 getRandomValues 按 RFC 4122 生成、Promise.any 带 AggregateError 兜底），并给垫片加捕获阶段错误收集——React error boundary 会吞渲染异常，window.onerror 冒泡阶段收不到，捕获阶段才拿得到真凶。
 - **修复**：离开屏幕再回来（或主页点「进入房间」）回到的是启动器而非原来的房间页。根因：引擎的 OPEN marker 只报根路径，壳层重开时永远 load 根路径。修复：WebActivity 在 `doUpdateVisitedHistory` 记录用户实际停留的房间路由（SPA 用 pushState 切路由、onPageFinished 不触发，这是唯一可靠钩子），重开优先跳该深链；引擎停止时清空，防误跳旧房间。
 - **新增**：网页前进 / 后退箭头（左下角原生悬浮按钮，半透明）。用原生按钮而非页内注入：失败页里页面脚本可能已死，原生按钮仍可用——而这正是最需要后退离开的场景。无对应历史时按钮灰显。

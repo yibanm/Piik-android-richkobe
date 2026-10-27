@@ -13,7 +13,7 @@ android {
         // 两处调用加运行时守卫，低版本自动降级（不采集系统声音、WiFi 锁用旧模式）。
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
+        versionCode = 8
         versionName = "2.5.0" // 应用版本独立演进（内置引擎为 Piik v2.5.0）
     }
 

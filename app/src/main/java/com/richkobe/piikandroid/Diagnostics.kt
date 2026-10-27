@@ -31,7 +31,11 @@ object Diagnostics {
         return uri
     }
 
-    /** Everything useful for debugging hosting, as one text file in Downloads. */
+    /**
+     * Everything useful for debugging hosting, as one text file in Downloads.
+     * 返回**完整保存路径**（/storage/emulated/0/Download/<文件名>），toast 直接展示，
+     * 用户能去文件管理器按路径找到（2026-10-27 用户要求，原来只给文件名）。
+     */
     fun saveDebugLog(context: Context): String? {
         val sb = StringBuilder()
         val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
@@ -65,6 +69,13 @@ object Diagnostics {
 
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         val name = "piik-debug-$stamp.txt"
-        return if (saveToDownloads(context, name, "text/plain", sb.toString().toByteArray()) != null) name else null
+        val uri = saveToDownloads(context, name, "text/plain", sb.toString().toByteArray()) ?: return null
+        return downloadsPath(context, uri) ?: "/storage/emulated/0/Download/$name"
     }
+
+    /** MediaStore 行的真实文件系统路径（_data 列）；查不到返回 null 由调用方兜底。 */
+    private fun downloadsPath(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.Downloads.DATA), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
 }

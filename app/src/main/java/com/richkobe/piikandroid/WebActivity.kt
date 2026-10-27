@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.util.Rational
@@ -70,8 +71,9 @@ class WebActivity : Activity() {
         root.addView(
             nav,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
-                setMargins(dp(12), 0, 0, dp(12))
+                // 用户指定左上角（原左下角会压住页面底部操作区）。
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                setMargins(dp(8), dp(8), 0, 0)
             },
         )
         updateNavVisibility()
@@ -213,6 +215,13 @@ class WebActivity : Activity() {
      * 幂等：style 标签带 id，重复注入 no-op。
      */
     private fun injectSmallScreenCss(view: WebView) {
+        // 双重门控（用户硬性要求：手表改动不得波及 V8a，也不得误伤 v7a 手机）：
+        // ① ABI = armeabi-v7a（手表均为 32 位；V8a 包到此直接返回，一行不注入）；
+        // ② 物理小屏 smallestScreenWidthDp < 300（手表约 180–230dp，手机 ≥320dp，
+        //    该值不随旋转变化）。CSS 内的 media query 是第三层兜底。
+        // 2026-10-27 教训：单靠 media query(max-width:480px) 门控失败——max-width
+        // 是 CSS px(≈dp)，手机视口 360–430dp 全命中，V8a 手机按钮被压没。
+        if (!isWatchFormFactor()) return
         view.evaluateJavascript(
             "(function(){if(document.getElementById('piik-small-screen'))return;" +
                 "var s=document.createElement('style');s.id='piik-small-screen';" +
@@ -220,6 +229,13 @@ class WebActivity : Activity() {
                 "(document.head||document.documentElement).appendChild(s);})();",
             null,
         )
+    }
+
+    /** 手表形态判定：v7a 包 + 物理小屏（smallestScreenWidthDp<300，不随旋转变化）。 */
+    private fun isWatchFormFactor(): Boolean {
+        val abi32 = Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a"
+        val small = resources.configuration.smallestScreenWidthDp < 300
+        return abi32 && small
     }
 
     private fun dp(v: Int) = android.util.TypedValue.applyDimension(
@@ -512,10 +528,14 @@ class WebActivity : Activity() {
         private const val REQUEST_WEB_PERMISSION = 3
 
         /**
-         * 小屏压缩布局（手表）。media query 门控：物理宽度 ≤ 480 CSS px 才命中，
-         * 手机（含 32 位 v7a 手机，宽度普遍 > 480）不受影响。压缩 Piik web UI 的
-         * 主要布局类（lr-* 为上游类名，grep dist css 确认）：缩小内边距/字号/
-         * 按钮高度，隐藏装饰性漫画提示，让控制条在小屏上放得下。
+         * 小屏压缩布局（手表）。双重门控：**仅 armeabi-v7a 包 + 物理小屏**才注入——
+         * 用户硬性要求手表改动不得波及 arm64-v8a；且 media query 的 max-width 是
+         * CSS px（≈dp），手机视口普遍 360–430dp 全 <480，单靠 media query 会误伤
+         * 手机（2026-10-27 实测：V8a 手机创建房间按钮被压没），故必须叠加 ABI 门控。
+         * 选择器纪律（2026-10-27 踩坑）：`.lr-comic-tip-wrap` 是 Tooltip 的**外壳**
+         * （包着触发按钮），display:none 会把「开始分享/加入房间」按钮一起藏掉；
+         * 只能藏气泡 `.lr-comic-tip` 本身。注入而非改 dist：防上游升级冲掉。
+         * 幂等：style 标签带 id，重复注入 no-op。
          */
         private const val SMALL_SCREEN_CSS =
             "@media (max-width:480px){" +
@@ -523,7 +543,8 @@ class WebActivity : Activity() {
                 ".lr-tile,.lr-sharing-section,.lr-sharing-panel,.lr-viewer-settings{padding:8px!important;margin:4px 0!important}" +
                 ".lr-btn{min-height:36px!important;padding:6px 10px!important;font-size:13px!important}" +
                 ".lr-input{min-height:34px!important;font-size:13px!important;padding:6px 8px!important}" +
-                ".lr-comic-tip-wrap,.lr-comic-tip,.lr-brand-sparkles{display:none!important}" +
+                ".lr-comic-tip{display:none!important}" +
+                ".lr-brand-sparkles{display:none!important}" +
                 ".lr-row-group{gap:6px!important}" +
                 ".lr-chip{padding:3px 8px!important;font-size:12px!important}" +
                 ".lr-toggle{min-height:32px!important}" +

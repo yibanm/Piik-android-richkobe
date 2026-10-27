@@ -265,22 +265,32 @@ class MainActivity : Activity() {
 
     /**
      * 一键复制诊断信息：真机用户不会发 logcat，复制粘贴是唯一可行的反馈通道。
-     * 含应用版本、WebView 内核版本（老内核故障的第一线索）、引擎 stderr 尾部。
+     * 内容尽量全（2026-10-27 用户要求「详细」）：版本/内核/ABI/屏幕参数/网络/
+     * 房间深链/共享状态/引擎输出尾 3000 字——老内核故障与路由问题的关键线索都在里面。
      */
     private fun copyDiagnostics() {
         val wv = runCatching {
             val vi = android.webkit.WebView.getCurrentWebViewPackage()
             "${vi?.packageName} ${vi?.versionName}"
         }.getOrDefault("unknown")
+        // BuildConfig 在 AGP 8 默认不生成（buildConfig=false），版本一律走 packageManager。
+        val pkg = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
+        val vCode = if (Build.VERSION.SDK_INT >= 28) pkg?.longVersionCode?.toString() else @Suppress("DEPRECATION") pkg?.versionCode?.toString()
+        val cfg = resources.configuration
         val text = buildString {
             appendLine("Piik Android richkobe 诊断")
-            appendLine("应用版本: ${runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrDefault("?")}")
+            appendLine("应用版本: ${pkg?.versionName ?: "?"} (code $vCode)")
             appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("设备: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("WebView: $wv")
             appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
-            appendLine("共享状态: ${HostState.phase}")
-            appendLine("---- 引擎最近输出 ----")
-            append(HostState.logText().takeLast(1500))
+            appendLine("屏幕: ${cfg.screenWidthDp}x${cfg.screenHeightDp}dp smallest=${cfg.smallestScreenWidthDp}dp density=${resources.displayMetrics.densityDpi}")
+            appendLine("手表形态判定(v7a+小屏): ${Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a" && cfg.smallestScreenWidthDp < 300}")
+            appendLine("WiFi: ${NetInfo.onWifi(this@MainActivity)} LAN: ${runCatching { NetInfo.lanAddresses(this@MainActivity) }.getOrDefault("?")}")
+            appendLine("DNS: ${runCatching { NetInfo.dnsServers(this@MainActivity) }.getOrDefault("?")}")
+            appendLine("共享状态: ${HostState.phase} 房间深链: ${HostState.roomPageUrl ?: "(无)"} 引擎页: ${HostState.pageUrl ?: "(无)"}")
+            appendLine("---- 引擎最近输出(尾3000字) ----")
+            append(HostState.logText().takeLast(3000))
         }
         service<ClipboardManager>().setPrimaryClip(ClipData.newPlainText("Piik 诊断", text))
         Toast.makeText(this, getString(R.string.diag_copied), Toast.LENGTH_LONG).show()

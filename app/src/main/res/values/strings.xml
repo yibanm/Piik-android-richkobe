@@ -30,7 +30,7 @@
 
     <!-- 调试日志 -->
     <string name="debug_log_collecting">正在收集日志…</string>
-    <string name="debug_log_saved">已保存到 Downloads/%1$s</string>
+    <string name="debug_log_saved">已保存到 %1$s</string>
     <string name="debug_log_failed">无法保存日志</string>
 
     <!-- 页脚 -->
