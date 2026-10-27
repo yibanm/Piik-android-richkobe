@@ -83,28 +83,41 @@ jobs:
           exit $status
 
       # ABI 分包后产物名为 app-<abi>-release.apk（不再叫 app-release.apk）。
-      # 目前只出 arm64-v8a 一个包，重命名为「软件名-版本-架构.apk」并核实库齐全。
-      - name: Name the APK
+      # 现在出 arm64-v8a + armeabi-v7a 两个包：逐个重命名为「软件名-版本-架构.apk」
+      # 并核实库齐全，多文件名换行分隔写入 APK_NAMES（softprops 与 artifact 都支持）。
+      - name: Name the APKs
         run: |
           version=$(grep -oE 'versionName = "[^"]+"' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           [ -n "$version" ] || { echo "::error::could not read versionName"; exit 1; }
-          apk=$(ls app/build/outputs/apk/release/app-*-release.apk 2>/dev/null | head -1)
-          [ -e "$apk" ] || { echo "::error::no APK produced under app/build/outputs/apk/release"; exit 1; }
-          abi=$(basename "$apk" | sed -E 's/^app-(.+)-release\.apk$/\1/')
-          # 核实包内确实带上了对应架构的库，避免空壳包发出去。
-          unzip -l "$apk" | grep -q "lib/$abi/" \
-            || { echo "::error::$apk 缺少 lib/$abi/ 库"; exit 1; }
-          name="Piik-Android-richkobe-v${version}-${abi}.apk"
-          cp "$apk" "$name"
-          echo "APK_NAME=$name" >> "$GITHUB_ENV"
-          echo "APK_VERSION=$version" >> "$GITHUB_ENV"
-          echo "APK_ABI=$abi" >> "$GITHUB_ENV"
-          echo "APK: $name ($(unzip -l "$apk" | grep -oE 'lib/[^/]+' | cut -d/ -f2 | sort -u | paste -sd+ -))"
+          names=""
+          count=0
+          for apk in app/build/outputs/apk/release/app-*-release.apk; do
+            [ -e "$apk" ] || continue
+            abi=$(basename "$apk" | sed -E 's/^app-(.+)-release\.apk$/\1/')
+            # 核实包内确实带上了对应架构的库，避免空壳包发出去。
+            unzip -l "$apk" | grep -q "lib/$abi/" \
+              || { echo "::error::$apk 缺少 lib/$abi/ 库"; exit 1; }
+            name="Piik-Android-richkobe-v${version}-${abi}.apk"
+            cp "$apk" "$name"
+            size=$(stat -c%s "$name")
+            echo "APK: $name (${size} bytes) ($(unzip -l "$apk" | grep -oE 'lib/[^/]+' | cut -d/ -f2 | sort -u | paste -sd+ -))"
+            names="${names:+$names
+          }$name"
+            count=$((count+1))
+          done
+          [ "$count" -ge 1 ] || { echo "::error::no APK produced under app/build/outputs/apk/release"; exit 1; }
+          {
+            echo "APK_NAMES<<EOF_APK_NAMES"
+            printf '%s\n' "$names"
+            echo "EOF_APK_NAMES"
+            echo "APK_VERSION=$version"
+            echo "APK_COUNT=$count"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: piik-android-richkobe-${{ env.APK_VERSION }}-${{ env.APK_ABI }}
-          path: ${{ env.APK_NAME }}
+          name: piik-android-richkobe-${{ env.APK_VERSION }}-apks
+          path: Piik-Android-richkobe-v${{ env.APK_VERSION }}-*.apk
 
       # 发版只在打 tag（v*）时进行；日常 push 的 APK 从上方 artifact 下载。
       # 从 CHANGELOG.md 抽取当前 tag 对应的段落作为本次 Release 正文，
@@ -129,7 +142,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Piik Android richkobe ${{ github.ref_name }} (${{ env.APK_ABI }})
+          name: Piik Android richkobe ${{ github.ref_name }}
           make_latest: true
           body_path: ${{ runner.temp }}/release-body.md
-          files: ${{ env.APK_NAME }}
+          # 同名资产替换、不同名共存：arm64 包名不变会被同内容重建替换，
+          # v7a 新名字追加到同一 Release。
+          files: |
+            ${{ env.APK_NAMES }}

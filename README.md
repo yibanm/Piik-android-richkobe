@@ -27,7 +27,7 @@
 APK 由 GitHub Actions 构建（需要 Google 的 Android SDK、Go 和 Node）：
 
 1. 打开本仓库 **Actions → Android APK**，进入最近一次构建。
-2. 下载 artifact（名如 `piik-android-richkobe-2.4.1-arm64-v8a`），解压得到 `Piik-Android-richkobe-v2.4.1-arm64-v8a.apk`（文件名带版本号与架构）。
+2. 下载 artifact（名如 `piik-android-richkobe-2.4.1-apks`），解压得到 `Piik-Android-richkobe-v2.4.1-arm64-v8a.apk`（64 位设备）与 `Piik-Android-richkobe-v2.4.1-armeabi-v7a.apk`（32 位老设备，无「公开邀请」模式）。文件名带版本号与架构。
 3. 传到手机打开安装（需允许文件管理器或浏览器「安装未知应用」）。
 
 打 `v*` tag 时会额外发布 **Releases**，附带 APK，可直接用手机下载安装。
@@ -113,7 +113,7 @@ scripts/build-native.sh        # Piik 引擎 + 采集 shim + cloudflared → app
 - 熄屏时共享暂停。
 - 主控页加载时麦克风指示灯会短暂闪烁（原因见上文）。
 - 在移动数据下服务多个观看者会消耗大量上行流量。Piik 的画质设置生效。
-- APK 下载约 26 MB（arm64，压缩后），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。
+- APK 下载约 26 MB（arm64-v8a，压缩后），安装后占用约 78 MB——因为携带完整的 Piik 引擎（libpiik.so ≈46 MB）、cloudflared 隧道（libcloudflared.so ≈27 MB）与采集 shim。armeabi-v7a（32 位）包更小（不含 cloudflared），但没有「公开邀请」模式——Local / Site 两种共享照常。
 
 ## 许可
 

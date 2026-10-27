@@ -25,7 +25,7 @@ PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 PIIK_REF=${PIIK_REF:-066e218d84a237db41d455975c89a002eb3d0d79}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
-ABIS=${ABIS:-arm64-v8a}
+ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}
 SKIP_CLOUDFLARED=${SKIP_CLOUDFLARED:-0}
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -75,14 +75,39 @@ fi
 # -checklinkname=0: pion's Android interface listing (wlynxg/anet) needs it.
 LDFLAGS="-s -w -checklinkname=0 -X github.com/TNTcraftHIM/Piik/internal/app.BuildRevision=${PIIK_REF:0:12}-android"
 
+# 找 NDK（armeabi-v7a 的 cgo 链接需要它的 clang）。CI runner 预装并导出
+# ANDROID_NDK_HOME；本机缺失时按 ANDROID_HOME/ndk/* 兜底探测。
+find_ndk() {
+  local ndk=${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_LATEST_HOME:-}}}
+  if [ -z "$ndk" ] && [ -n "${ANDROID_HOME:-}" ]; then
+    ndk=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)
+  fi
+  [ -n "$ndk" ] || { echo "armeabi-v7a 需要 Android NDK（设置 ANDROID_NDK_HOME），未找到" >&2; exit 1; }
+  local cc
+  cc=$(ls "$ndk"/toolchains/llvm/prebuilt/*/bin/armv7a-linux-androideabi26-clang 2>/dev/null | head -1)
+  [ -n "$cc" ] && [ -x "$cc" ] || { echo "NDK clang 不存在：$ndk/toolchains/llvm/prebuilt/*/bin/armv7a-linux-androideabi26-clang" >&2; exit 1; }
+  echo "$cc"
+}
+
 for abi in $ABIS; do
   arch=$(goarch "$abi")
   out=$JNI/$abi
   mkdir -p "$out"
-  echo "==> $abi: libpiik.so"
-  (cd "$PIIK" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
-  echo "==> $abi: libpiikcapture.so"
-  (cd "$ROOT/native/capture-shim" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+  if [ "$abi" = "armeabi-v7a" ]; then
+    # Go 对 android/arm（32 位）强制 cgo 外部链接：纯 CGO_ENABLED=0 会报
+    # "android/arm requires external (cgo) linking, but cgo is not enabled"。
+    # 用 NDK clang 作 CC（API 26 对齐 minSdk），GOARM=7 面向主流 32 位机。
+    CC7=$(find_ndk)
+    echo "==> $abi: libpiik.so (cgo, CC=$CC7)"
+    (cd "$PIIK" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
+    echo "==> $abi: libpiikcapture.so (cgo)"
+    (cd "$ROOT/native/capture-shim" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC7" go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+  else
+    echo "==> $abi: libpiik.so"
+    (cd "$PIIK" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$out/libpiik.so" ./cmd/piik-app)
+    echo "==> $abi: libpiikcapture.so"
+    (cd "$ROOT/native/capture-shim" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$out/libpiikcapture.so" .)
+  fi
 done
 
 # ---- cloudflared (optional: without it, Local and Site modes still work) ----

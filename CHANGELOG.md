@@ -1,6 +1,6 @@
 # 更新日志 / Changelog
 
-本项目版本号跟随内置的 Piik 引擎版本。APK 按 ABI 分包（当前为 arm64-v8a，64 位 ARM），适用 **Android 8.0 及以上**的 64 位设备；32 位设备暂不支持，原因见 v2.4.1 已知限制。
+本项目版本号跟随内置的 Piik 引擎版本。APK 按 ABI 分包：arm64-v8a（64 位 ARM，全功能）与 armeabi-v7a（32 位 ARM，不含「公开邀请」模式，见 v2.4.1 已知限制），适用 **Android 8.0 及以上**设备。
 
 ## v2.4.1
 
@@ -22,9 +22,9 @@
 
 ### 本次更新（Android 侧）
 
-- **兼容**：最低系统要求从 Android 10 降到 **Android 8.0**，Android 8/9 的 64 位设备现在也能安装。APK 改为按 ABI 分包（当前只出 arm64-v8a），每个包只含自己那套 `.so`。
+- **兼容**：最低系统要求从 Android 10 降到 **Android 8.0**，Android 8/9 的 64 位设备现在也能安装。APK 按 ABI 分包（arm64-v8a 与 armeabi-v7a 各一个），每个包只含自己那套 `.so`。
   - 系统声音采集依赖 Android 10 的 `AudioPlaybackCaptureConfiguration`，属平台墙、9 及以下无公开替代：低版本设备会自动降级——照常共享画面，只是不含「手机正在播放的声音」，麦克风与房间语音不受影响；引擎据 probe 上报的 `systemAudio=false` 不再显示系统声音控件。
-  - **32 位 armeabi-v7a 设备暂不支持**：Go 对 `android/arm` 强制要求 cgo 外部链接（32 位 Android 的 TLS 依赖 libc），而本项目引擎走纯 Go 交叉编译（`CGO_ENABLED=0`），要支持需引入 Android NDK 的 cgo 工具链，改造量大、且 32 位设备市占已低。老设备请先确认是 64 位（arm64）再下载。
+  - **32 位 armeabi-v7a 包已支持**：Go 对 `android/arm` 强制要求 cgo 外部链接（32 位 Android 的 TLS 依赖 libc），因此该包用 Android NDK clang 以 cgo 工具链构建（`GOARM=7`，API 26 对齐 minSdk）；64 位 arm64-v8a 包维持纯 Go 交叉编译（`CGO_ENABLED=0`）不变。
 - **修复**：主机端投屏时按返回键会在网页历史里来回打转、回不到应用主页，导致只能杀进程才能停止共享。根因是主机页是单页应用，网页后退优先级压过了 Android 返回。现在主机模式下返回键直接回应用主页（共享继续在后台跑并给出提示），观看模式仍保留网页内后退，因为观看端在多路画面间切换需要它。
 - **新增**：悬浮球。屏幕边缘一个 40dp 小球，可拖到任意一侧并自动吸边，点击展开菜单；在游戏或其他 App 里也能停止共享、跳回主控页，停止共享后自动收起。开启入口在主页「从本机发起共享」卡片中。菜单窗口不抢焦点，展开时不会打断底下游戏的操作。
 - **新增**：系统声音开关。关闭后共享画面照常，但手机正在播放的声音不再传给观看端；麦克风与房间语音不受影响。上游网页版的同类开关依赖 Windows 特有的「按应用排除音频」能力，Android 上永不显示，因此这个开关做在应用内。
@@ -40,12 +40,13 @@
 - 熄屏时共享暂停。
 - 悬浮球需要「显示在其他应用上层」权限，Android 6 以上无法静默授予，首次开启要手动到系统设置允许；部分定制系统可能额外限制悬浮窗。
 - **Android 8/9 老设备若界面白屏**：Piik 界面由内置 WebView 渲染，上游前端用较新的 JS 语法编译，而出厂 WebView 内核过旧（Android 8≈Chrome 58）可能无法解析导致白屏。解决办法是到应用商店把「Android System WebView / Chrome」更新到较新版本再打开；本机无法为上游前端做语法降级，故只能这样绕过。
+- **armeabi-v7a 包没有「公开邀请」模式**：cloudflared 不为 32 位构建，该包缺 `libcloudflared.so`；壳层是「存在才启用隧道」，所以 32 位设备上「本地房间」与「连接站点」照常，仅「公开邀请」不可用。64 位设备请下 arm64-v8a 包获得全功能。
 - 本版通过 CI 构建验证，**引擎升级后的实际投屏、悬浮球、静音开关、以及 Android 8/9 老设备的真实运行均未在真机验证**，遇到问题请在本仓库提 Issue。
 
 ### 安装说明
 
-1. 下载 **Piik-Android-richkobe-v2.4.1-arm64-v8a.apk**，传到手机打开安装（需允许「安装未知应用」）。
-2. 系统要求：Android 8.0 及以上，arm64（64 位）设备；32 位设备暂不支持。
+1. 64 位设备（绝大多数现代手机）下载 **Piik-Android-richkobe-v2.4.1-arm64-v8a.apk**；32 位老设备下载 **Piik-Android-richkobe-v2.4.1-armeabi-v7a.apk**（无「公开邀请」模式）。传到手机打开安装（需允许「安装未知应用」）。不确定架构就先装 arm64 包，装不上（提示与设备不兼容）再换 v7a 包。
+2. 系统要求：Android 8.0 及以上；64 位与 32 位 ARM 设备均有对应包。
 3. 从 v2.3.0 升级：包名同为 `com.richkobe.piikandroid`，可直接覆盖安装，数据保留。
 4. 包名与旧版 Piik 移植（`io.github.piikandroid`）不同，属独立应用可并存，旧版可卸载。
 5. 本 APK 为 debug key 签名：未配置固定签名密钥时每次构建用一次性 key，跨版本覆盖安装可能被系统拒绝，需先卸载再装。若要可覆盖升级，请在仓库 Secrets 配置 `PIIK_KEYSTORE_BASE64`、`PIIK_KEYSTORE_PASSWORD`、`PIIK_KEY_ALIAS`、`PIIK_KEY_PASSWORD`。
