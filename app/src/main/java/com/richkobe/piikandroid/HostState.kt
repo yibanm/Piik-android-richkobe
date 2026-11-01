@@ -13,6 +13,19 @@ object HostState {
     /** The Piik page to show: the launcher first, then the Host page. */
     @Volatile var pageUrl: String? = null
         private set
+
+    /**
+     * 用户当前停留的房间页深链（同引擎会话内有效）。v2.5.0 曾把深链机制整体删除
+     * （2026-11-02 用户反馈「开了房间依旧无法返回原房间，每次都要重新创建」——
+     * 那是过度修正）：真正无效的只是**跨引擎重启**的深链（引擎端口每次启动变），
+     * 同一会话内端口不变、深链有效。故恢复记录，但仅在 RUNNING 期间有效，
+     * 引擎停止/失败即清空（update 里 STOPPED/FAILED 分支负责），重开不会拿到旧链。
+     */
+    @Volatile var roomPageUrl: String? = null
+
+    fun noteRoomPage(url: String) {
+        if (phase == Phase.RUNNING) roomPageUrl = url
+    }
     @Volatile var message: String? = null
         private set
 
@@ -37,7 +50,10 @@ object HostState {
     fun update(phase: Phase, pageUrl: String? = this.pageUrl, message: String? = null) {
         this.phase = phase
         this.pageUrl = if (phase == Phase.STOPPED || phase == Phase.FAILED) null else pageUrl
-        if (phase == Phase.STOPPED || phase == Phase.FAILED) roomActive = false
+        if (phase == Phase.STOPPED || phase == Phase.FAILED) {
+            roomActive = false
+            roomPageUrl = null // 引擎已停，旧深链的端口失效，禁止跨会话复用
+        }
         this.message = message
         main.post { listeners.forEach { it() } }
     }

@@ -115,11 +115,11 @@ class WebActivity : Activity() {
         if (mode == MODE_HOST) {
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
-            // 重开运行中房间一律回引擎根路径（launcher）：引擎端口与 piik-client-port
-            // 每次启动都变，壳层自记的「深链」必然过期（2026-10-27 真机诊断证实：
-            // 记到的 ?debug=1 / /client 旧链加载后连不上，表现为「无法访问」与
-            // 「要重新分享」）。上游 launcher 自带带新端口的「进入」按钮，交给它。
-            if (saved != null) web.restoreState(saved) else HostState.pageUrl?.let { lastHostPage = it; web.loadUrl(it) }
+            // 重开运行中房间优先回用户停留的房间页深链（同会话端口不变、有效）；
+            // 无深链才回引擎根路径（launcher）。跨引擎重启的旧深链已被 HostState
+            // 在 STOPPED/FAILED 时清空，不会拿到过期端口。
+            if (saved != null) web.restoreState(saved)
+            else (HostState.roomPageUrl ?: HostState.pageUrl)?.let { lastHostPage = it; web.loadUrl(it) }
             if (HostState.pageUrl == null) onHostState()
         } else {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -137,7 +137,7 @@ class WebActivity : Activity() {
             mode = MODE_HOST
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
-            HostState.pageUrl?.let { if (web.url != it) web.loadUrl(it) }
+            (HostState.roomPageUrl ?: HostState.pageUrl)?.let { if (web.url != it) web.loadUrl(it) }
             // 页面已加载且不再重载时（onNewIntent 不触发 onPageStarted），
             // 直接补一次自动驱动注入，否则悬浮球点球不会生效。
             if (autoDrive && web.url != null) injectAutoDrive(web)
@@ -151,7 +151,7 @@ class WebActivity : Activity() {
 
     private fun onHostState() {
         when (HostState.phase) {
-            HostState.Phase.RUNNING -> HostState.pageUrl?.let { page ->
+            HostState.Phase.RUNNING -> (HostState.roomPageUrl ?: HostState.pageUrl)?.let { page ->
                 if (page != lastHostPage) {
                     lastHostPage = page
                     web.loadUrl(page)
@@ -159,8 +159,27 @@ class WebActivity : Activity() {
             }
             HostState.Phase.STARTING -> if (web.url == null) web.loadData(statusPage(getString(R.string.web_status_starting)), "text/html", "utf-8")
             HostState.Phase.FAILED -> web.loadData(statusPage(HostState.message ?: getString(R.string.web_status_stopped)), "text/html", "utf-8")
-            HostState.Phase.STOPPED -> if (mode == MODE_HOST) finish()
+            HostState.Phase.STOPPED -> if (mode == MODE_HOST) finishToMain()
         }
+    }
+
+    /**
+     * 关闭主机页时回到应用主页面。方向按任务栈实际情况走（2026-11-02 用户反馈
+     * 「返回方向有点问题」）：
+     * - 从主页面进来的（本 Activity 不是 task root）：直接 finish，自然回落到
+     *   栈里的主页面，过渡方向与正常返回一致；
+     * - 悬浮球 NEW_TASK 拉起的（task root，栈里没有主页面）：先把主页面提到前台
+     *   （已存在则 REORDER_TO_FRONT，不存在则新建）再 finish，避免落回上一个
+     *   任务（游戏/桌面）导致用户找不到关共享/关悬浮球的入口。
+     */
+    private fun finishToMain() {
+        if (isTaskRoot) {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            )
+        }
+        finish()
     }
 
     private fun statusPage(text: String): String {
@@ -359,10 +378,21 @@ class WebActivity : Activity() {
         /**
          * SPA 路由用 pushState 切换，onPageFinished 不触发；WebView 的访问历史
          * 变化（含 pushState）会走这里，是刷新前进/后退按钮状态的唯一可靠钩子。
+         * 同时记录用户停留的房间页深链：只记主机主控页 `/`（引擎端口不变的同
+         * 会话内有效），观看页 `/r/XXXX` 与 launcher `/client` 不记——观看凭证在
+         * hash 里易过期，launcher 是默认入口无需记。
          */
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
             updateNavVisibility()
+            if (mode == MODE_HOST && url != null) {
+                val uri = Uri.parse(url)
+                val host = uri.host
+                val path = uri.path ?: ""
+                if ((host == "127.0.0.1" || host == "localhost") && path == "/") {
+                    HostState.noteRoomPage(url)
+                }
+            }
         }
     }
 
@@ -534,12 +564,13 @@ class WebActivity : Activity() {
             // 主机页是单页应用（launcher ↔ 房间页之间会产生网页历史）。若让返回键
             // 走网页后退，用户会一直在这几页里打转，永远回不到原生主页，也就拿不到
             // 主页的「停止共享」按钮，只能杀进程。所以主机模式下返回键直接回主页，
-            // 后台共享不受影响（前台服务仍在跑）。
+            // 后台共享不受影响（前台服务仍在跑）。回主页而非 finish：悬浮球 NEW_TASK
+            // 拉起时任务栈无 MainActivity，finish 会落回上一个任务（2026-11-02 反馈）。
             mode == MODE_HOST -> {
                 if (HostState.phase == HostState.Phase.RUNNING) {
                     Toast.makeText(this, getString(R.string.web_back_keeps_hosting), Toast.LENGTH_LONG).show()
                 }
-                @Suppress("DEPRECATION") super.onBackPressed()
+                finishToMain()
             }
             // 观看模式保留网页历史后退：观看端在多路画面之间切换需要它。
             web.canGoBack() -> web.goBack()
