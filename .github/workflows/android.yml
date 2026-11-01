@@ -138,7 +138,11 @@ jobs:
           echo "已抽取 ${tag} 的更新日志（$(wc -l < "$RUNNER_TEMP/release-body.md") 行）"
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
+        # 只有 CI 配了主密钥（secrets.PIIK_KEYSTORE_BASE64）才允许发 Release。
+        # 未配置时 CI 产物是一次性 debug key 签名，发布它会违反项目发布规范
+        # （禁止 debug/随机证书发 release）并让用户无法覆盖升级；此时 Release
+        # 由维护者用本地主密钥构建的包经 GitHub API 手动发布。
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_SIGNING_KEY == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}

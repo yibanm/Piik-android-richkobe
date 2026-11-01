@@ -46,12 +46,21 @@ class MainActivity : Activity() {
 
     private val prefs by lazy { getSharedPreferences("piik", MODE_PRIVATE) }
     private val hostListener: () -> Unit = { renderHost() }
+    /** 悬浮球显隐实时同步开关：服务启停即回调（onCreate/onDestroy 均在主线程）。 */
+    private val ballVisibilityListener: () -> Unit = {
+        runOnUiThread {
+            if (!syncingSwitch && ::floatSwitch.isInitialized) {
+                floatSwitch.isChecked = FloatingBallService.visible()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
         handleShare(intent)
         HostState.addListener(hostListener)
+        FloatingBallService.addVisibilityListener(ballVisibilityListener)
         renderHost()
         renderRecents()
         maybePromptBatteryOptimization()
@@ -87,6 +96,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         HostState.removeListener(hostListener)
+        FloatingBallService.removeVisibilityListener(ballVisibilityListener)
         super.onDestroy()
     }
 

@@ -110,6 +110,7 @@ class WebActivity : Activity() {
 
     private fun handle(intent: Intent, saved: Bundle? = null) {
         mode = intent.getStringExtra(EXTRA_MODE) ?: if (intent.action == Intent.ACTION_VIEW) MODE_WATCH else mode
+        autoDrive = intent.getBooleanExtra(EXTRA_AUTODRIVE, false)
         val url = intent.getStringExtra(EXTRA_URL) ?: intent.data?.toString()
         if (mode == MODE_HOST) {
             HostState.addListener(hostListener)
@@ -131,11 +132,15 @@ class WebActivity : Activity() {
         setIntent(intent)
         val url = intent.getStringExtra(EXTRA_URL) ?: intent.data?.toString()
         val newMode = intent.getStringExtra(EXTRA_MODE) ?: MODE_WATCH
+        autoDrive = intent.getBooleanExtra(EXTRA_AUTODRIVE, false)
         if (newMode == MODE_HOST) {
             mode = MODE_HOST
             HostState.addListener(hostListener)
             HostState.addExternalListener(externalListener)
             HostState.pageUrl?.let { if (web.url != it) web.loadUrl(it) }
+            // 页面已加载且不再重载时（onNewIntent 不触发 onPageStarted），
+            // 直接补一次自动驱动注入，否则悬浮球点球不会生效。
+            if (autoDrive && web.url != null) injectAutoDrive(web)
         } else if (url != null) {
             mode = MODE_WATCH
             web.loadUrl(url)
@@ -194,20 +199,44 @@ class WebActivity : Activity() {
      * 白屏时展示中文诊断页；POLYFILLS 是剪贴板/分享/画中画桥接。
      * onPageStarted 注入保证垫片先于页面脚本运行；onPageFinished 再注入
      * 一次作为 SPA 路由切换后的兜底（守卫使其成为 no-op）。
+     * 兼容垫片部分仅对 32 位 v7a 包注入（用户 2026-11-01 裁定 v8a 不强制
+     * 兼容老内核）；诊断与错误回传全 ABI 保留。
      */
     private fun injectOldWebViewShims(view: WebView) {
         try {
+            // 诊断/回传部分全 ABI 注入；兼容垫片仅 v7a（拼接门控标记）。
+            val gate = if (isV7aPackage()) "window.__piikCompat=true;" else ""
             val script = oldWebViewSource
                 ?: assets.open("old-webview.js").bufferedReader().use { it.readText() }
                     .also { oldWebViewSource = it }
-            view.evaluateJavascript(script, null)
-            view.evaluateJavascript(POLYFILLS, null)
+            view.evaluateJavascript(gate + script, null)
+            if (isV7aPackage()) view.evaluateJavascript(POLYFILLS, null)
         } catch (e: Exception) {
             Log.w("PiikWeb", "old-webview shims inject failed", e)
         }
     }
 
     private var oldWebViewSource: String? = null
+
+    /** 当前进程是否 32 位 v7a 包（决定要不要注入老内核兼容垫片）。 */
+    private fun isV7aPackage(): Boolean = Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a"
+
+    /**
+     * 悬浮球「开始共享」的自动驱动：壳层替用户点完「进房/建房 → 开始共享」整条
+     * 网页流程，用户只剩系统投屏授权那一下（Android 安全墙，无法绕过）。
+     * 仅在以 [EXTRA_AUTODRIVE] 启动主机页时注入，手动打开主页不触发。
+     * 轮询 DOM 而非一次性点击：launcher→房间页是 SPA pushState，不重载页面。
+     * 选择器按上游 v2.5.1 实测：进房 `a.lr-btn.is-primary`、LAN `select`、
+     * 提交 `button[type=submit]`、主控 `#host-start-share`；模式由引擎
+     * `client.json.mode` 持久化，无需点选。上游改版致选择器失效时轮询超时
+     * 自动放弃（回退为现状：用户自己点），不会误点。
+     */
+    private fun injectAutoDrive(view: WebView) {
+        if (mode != MODE_HOST || !autoDrive) return
+        view.evaluateJavascript(AUTODRIVE_JS, null)
+    }
+
+    private var autoDrive = false
 
     /**
      * 小屏（手表等）压缩布局。用 max-width media query 门控：只有物理小屏设备
@@ -305,12 +334,14 @@ class WebActivity : Activity() {
             injectOldWebViewShims(view)
             injectIceFix(view, url)
             injectSmallScreenCss(view)
+            injectAutoDrive(view)
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             injectOldWebViewShims(view)
             injectIceFix(view, url)
             injectSmallScreenCss(view)
+            injectAutoDrive(view)
             updateNavVisibility()
             // Piik's host page talks to the engine on this phone over WebRTC.
             // WebView hides local addresses behind mDNS names unless the page
@@ -533,9 +564,63 @@ class WebActivity : Activity() {
     companion object {
         const val EXTRA_MODE = "mode"
         const val EXTRA_URL = "url"
+        /** 悬浮球「开始共享」：主机页加载后自动点完进房/建房→开始共享。 */
+        const val EXTRA_AUTODRIVE = "autodrive"
         const val MODE_WATCH = "watch"
         const val MODE_HOST = "host"
         private const val REQUEST_WEB_PERMISSION = 3
+
+        /**
+         * 自动驱动脚本（ES5，老内核也要能跑）。轮询 DOM 逐步推进：
+         * ① 运行中房间 → 点进房链接 `a.lr-btn.is-primary`（launcher 的 target 分支）；
+         * ② 无房间 → 本地模式若 LAN 未选则选第一个地址（否则提交按钮 disabled），
+         *    再点 `button[type=submit]` 建房；
+         * ③ 进主控页后点 `#host-start-share` 触发系统投屏授权弹窗。
+         * 模式不在此点选：引擎把上次选择持久化在 client.json.mode，launcher 默认
+         * 即用户上次的模式。选择器失效（上游改版）时轮询到时限自动放弃，回退为
+         * 用户手动点，不会误点无关控件。每步只点一次（done 标记防重复）。
+         */
+        private const val AUTODRIVE_JS = """
+(function () {
+  if (window.__piikAutoDrive) return;
+  window.__piikAutoDrive = true;
+  var DEADLINE = Date.now() + 20000;
+  var done = {};
+  function clickOnce(key, el) {
+    if (!el || done[key]) return false;
+    done[key] = true;
+    el.click();
+    return true;
+  }
+  function tick() {
+    if (Date.now() > DEADLINE) return;
+    // ③ 主控页：开始共享（触发系统投屏授权）
+    var start = document.getElementById('host-start-share');
+    if (start && !start.disabled) { clickOnce('start', start); return; }
+    // ① launcher 运行中房间：进房链接
+    var enter = document.querySelector('a.lr-btn.is-primary[href]');
+    if (enter) { clickOnce('enter', enter); setTimeout(tick, 600); return; }
+    // ② launcher 建房表单：LAN 未选则选第一个，再提交
+    var form = document.querySelector('form.lr-client-launch-panel');
+    if (form) {
+      var sel = form.querySelector('select');
+      if (sel && !sel.value && sel.options.length > 1) {
+        // React 受控组件：直接赋 .value 会被 React 覆盖，必须走原生 setter
+        // 再派发 change，React 的合成事件才收得到。
+        var setter = Object.getOwnPropertyDescriptor(
+          window.HTMLSelectElement.prototype, 'value');
+        if (setter && setter.set) setter.set.call(sel, sel.options[1].value);
+        else sel.value = sel.options[1].value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      var submit = form.querySelector('button[type=submit]');
+      if (submit && !submit.disabled) clickOnce('submit', submit);
+    }
+    setTimeout(tick, 500);
+  }
+  setTimeout(tick, 800);
+})();
+"""
 
         /**
          * 小屏压缩布局（手表）。双重门控：**仅 armeabi-v7a 包 + 物理小屏**才注入——

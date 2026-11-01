@@ -65,6 +65,7 @@ class FloatingBallService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         addBall()
         HostState.addListener(hostListener)
+        notifyVisibility()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -79,6 +80,7 @@ class FloatingBallService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         removeViews()
         if (instance === this) instance = null
+        notifyVisibility()
         super.onDestroy()
     }
 
@@ -229,7 +231,7 @@ class FloatingBallService : Service() {
                 if (starting) getString(R.string.float_starting) else getString(R.string.float_start),
                 ACCENT,
                 enabled = !starting,
-            ) { openApp() })
+            ) { startSharingDirect() })
         }
         panel.addView(menuButton(getString(R.string.float_hide), NEUTRAL) { hide() })
     }
@@ -278,10 +280,20 @@ class FloatingBallService : Service() {
 
     // ---- 动作 ----
 
-    /** 拉回前台让用户自己点「开始共享」——唯一可靠的路径，理由见类注释。 */
-    private fun openApp() {
+    /**
+     * 「开始共享」一键直达：壳层替用户点完网页流程（进房/建房→开始共享），
+     * 用户只剩系统投屏授权那一下（Android 安全墙，无法绕过、也无法后台点）。
+     * 引擎没起时先起引擎（WebActivity 主机页要等引擎 RUNNING 才有 URL）；
+     * 以 EXTRA_AUTODRIVE 打开主机页，页面加载后自动驱动点击。
+     * WebView 需短暂在前台跑：后台 WebView 被 Android 节流，注入点击不可靠
+     * （v2.4.1 实测结论），所以这里把 App 拉到前台，但用户不必再手动点网页。
+     */
+    private fun startSharingDirect() {
+        if (HostState.phase != HostState.Phase.RUNNING) PiikService.start(this)
         startActivity(
-            Intent(this, MainActivity::class.java)
+            Intent(this, WebActivity::class.java)
+                .putExtra(WebActivity.EXTRA_MODE, WebActivity.MODE_HOST)
+                .putExtra(WebActivity.EXTRA_AUTODRIVE, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
         )
     }
@@ -304,6 +316,11 @@ class FloatingBallService : Service() {
 
     private fun hide() {
         stopSelf()
+    }
+
+    /** 通知主页面等订阅者刷新悬浮球开关状态（onCreate/onDestroy 均在主线程）。 */
+    private fun notifyVisibility() {
+        for (listener in visibilityListeners) runCatching { listener() }
     }
 
     private fun removeViews() {
@@ -382,6 +399,20 @@ class FloatingBallService : Service() {
             private set
 
         fun visible(): Boolean = instance != null
+
+        /**
+         * 悬浮球显隐变化订阅（服务 onCreate/onDestroy 时在主线程回调）。
+         * 主页面用它实时同步开关状态，不必等 onResume（用户 2026-11-01 要求）。
+         */
+        private val visibilityListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+        fun addVisibilityListener(listener: () -> Unit) {
+            visibilityListeners.add(listener)
+        }
+
+        fun removeVisibilityListener(listener: () -> Unit) {
+            visibilityListeners.remove(listener)
+        }
 
         /** 没有悬浮窗权限时返回 false，调用方负责引导用户去系统设置授权。 */
         fun start(context: Context): Boolean {

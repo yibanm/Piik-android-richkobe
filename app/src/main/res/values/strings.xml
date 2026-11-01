@@ -82,7 +82,7 @@
     <string name="float_starting">正在启动…</string>
     <string name="float_stop">停止共享</string>
     <string name="float_open_host">打开主控页</string>
-    <string name="float_hide">收起悬浮球</string>
+    <string name="float_hide">关闭悬浮球</string>
     <string name="float_switch_label">悬浮球（在游戏或其他 App 里也能开始 / 停止共享）</string>
     <string name="float_need_permission">悬浮球需要「显示在其他应用上层」权限，请在系统设置中允许</string>
 

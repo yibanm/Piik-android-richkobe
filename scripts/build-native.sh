@@ -16,17 +16,31 @@ set -euo pipefail
 
 PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 # Pinned: the patch and the capture contract (protocol 7) were verified against it.
-# v2.5.0 — Android 共享与触控控制进入共享运行时（#504）、悬浮工具输入焦点修复（#507）。
-# 已核对：probeProtocol 仍为 7；Capabilities 仅新增 remoteInput/captureBorderControl
-# 两个 omitempty 字段（Kotlin probe JSON 不传即兼容，DisallowUnknownFields 不受影响）；
-# 采集参数集不变（--probe/--protocol-v7/--capture-video/--encoded-video 均在）；
-# go.mod 仍 go 1.27.3、engines node >=24<27（工具链要求不变）；vite 仍无 build.target
-# （dist 转译+门禁链路继续有效）；版本变量搬家：BuildRevision 从 cmd/piik-app 移至
-# internal/app/buildinfo 包的 Revision（见下方 LDFLAGS）；上游新增 mobile/ 目录为官方
-# 版自己的桥，与 cmd/piik-app+capture-shim 路线不冲突。
-# 补丁 0001-android-support.patch 已在纯净 v2.5.0 克隆上 git apply --check 验证可干净应用，
-# 其新建的 anet_android.go / dns_android.go 上游仍不存在（无撞车），依赖的 wlynxg/anet 在 go.mod 中。
-PIIK_REF=${PIIK_REF:-499789671c7530b7364818b9c07123f3f290ebad}
+# v2.5.1 — 分享恢复与远程控制稳定性：H.264 编码选择改善，重连/换源/丢包后的画面恢复，
+# 换源失败时保留正常分享；声音与房间语音连续、切换播放窗口不再双重声音；SFU 恢复
+# 测试发包预算修正（避免误报画面停顿）。
+# 已核对（2026-11-01，本机实跑构建链，非静态推断）：
+#   - probeProtocol 仍为 7；Capabilities 字段集与 v2.5.0 完全相同
+#     （remoteInput / captureBorderControl / microphone / processAudioExclusion
+#     等仍是 omitempty，Kotlin probe JSON 不传即兼容，DisallowUnknownFields 不受影响）；
+#   - 采集参数集不变；
+#   - go.mod 仍 go 1.27.3、package.json engines 仍 node >=24 <27（工具链要求不变）；
+#   - vite 仍无 build.target（dist 转译+AST 门禁链路继续有效）；
+#   - internal/app/buildinfo 与 v2.5.0 逐字节相同（Release + Revision 双变量，
+#     LDFLAGS 注入 Revision 的路径不变）；
+#   - 补丁触及的四个文件（cmd/piik-app、browser/open.go、lan/addresses.go、
+#     nativecapture/probe.go）在 v2.5.1 均存在，补丁 git apply --check 干净通过。
+# **新增依赖形态（v2.5.1 特有，必须留意）**：go.mod 多了两条 replace——
+#   - github.com/pion/webrtc/v4 => github.com/TNTcraftHIM/pion-webrtc/v4
+#     v4.0.0-20261029063205-6ed9e55c5935（H.264 equivalent profiles，上游 PR #3668 未合）；
+#   - github.com/livekit/livekit-server => github.com/TNTcraftHIM/livekit ...（既存）。
+# 两者都是 TNTcraftHIM 自己的 fork，走 GOPROXY 正常拉取（本机实测需 goproxy.cn，
+# proxy.golang.org 国内不可达）。fork 属 Apache-2.0（与原 pion 同许可证），无传染性问题。
+# 上游 mobile/（官方 Android 桥）目录结构在 v2.5.1 扩充为 mobile/{android,bridge,cloudflared}，
+# 但 mobile/cloudflared/fallback_test.go 的测试依赖依旧残缺（quic-go 缺 go.sum 条目、
+# rs/zerolog 未声明），go mod vendor 仍会失败——prepare_vendor 里删 mobile/ 的处置继续有效
+# （已实跑验证：删后 vendor exit 0，产物 183MB）。
+PIIK_REF=${PIIK_REF:-eef70ffda0ffddce6aec109521ab70871e5b7c2f}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
 ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}
@@ -74,17 +88,25 @@ if [ "${SKIP_WEB:-0}" != 1 ]; then
   command -v npm >/dev/null || { echo "missing: npm (Node.js)" >&2; exit 1; }
   echo "==> Piik web interface"
   (cd "$PIIK" && npm ci --no-audit --no-fund && npm run build:web)
-  # 老 WebView 兼容（白屏根因修复）：上游 vite.config.ts 未设 build.target，
-  # 产物含 Chrome 74（Android 9 出厂 WebView）无法解析的语法（?. / ?? / 逻辑赋值等，
-  # acorn 校验 10 个 js 中 8 个解析失败），SPA 起不来即白屏。
-  # 用上游 node_modules 自带的 esbuild 把 dist 里的 js 逐文件原地降级。
-  # target 必须=chrome74（要覆盖的最老可运行内核），**不能更低**：chrome61 会让
-  # esbuild 把 import.meta 替换成空对象（61 不支持），new URL(import.meta.url)
-  # 变 new URL(undefined) 直接 Invalid URL——连现代内核一起炸（2026-10-27 实测）。
-  # chrome74 原生支持 import.meta / 动态 import / 类字段，esbuild 只降级它缺的
-  # ?./??/逻辑赋值/数字分隔符等，两代内核都正常。只降语法不补运行时 API——缺的
-  # Promise.allSettled / replaceAll / Object.hasOwn 等由壳层 WebActivity.kt 的
-  # assets/old-webview.js 在 onPageStarted 注入。
+fi
+
+# 老 WebView 兼容（白屏根因修复）：上游 vite.config.ts 未设 build.target，
+# 产物含 Chrome 74（Android 9 出厂 WebView）无法解析的语法（?. / ?? / 逻辑赋值等，
+# acorn 校验 10 个 js 中 8 个解析失败），SPA 起不来即白屏。
+# 用上游 node_modules 自带的 esbuild 把 dist 里的 js 逐文件原地降级。
+# target 必须=chrome74（要覆盖的最老可运行内核），**不能更低**：chrome61 会让
+# esbuild 把 import.meta 替换成空对象（61 不支持），new URL(import.meta.url)
+# 变 new URL(undefined) 直接 Invalid URL——连现代内核一起炸（2026-10-27 实测）。
+# chrome74 原生支持 import.meta / 动态 import / 类字段，esbuild 只降级它缺的
+# ?./??/逻辑赋值/数字分隔符等，两代内核都正常。只降语法不补运行时 API——缺的
+# Promise.allSettled / replaceAll / Object.hasOwn 等由壳层 WebActivity.kt 的
+# assets/old-webview.js 在 onPageStarted 注入（且仅 v7a 包注入，见下）。
+# **降级时机（2026-11-01 用户裁定「v8a 不强制兼容旧版本，只有 v7a 才兼容」）**：
+# arm64-v8a 引擎用**原始 dist**（v8a 设备基本全是现代内核，降级是纯开销），
+# 第一个非 arm64 ABI 构建前才原地降级 dist，v7a/x86_64 引擎带降级产物。
+# 壳层侧对应：old-webview.js 的兼容垫片仅对 v7a 包注入（__piikCompat 门控），
+# 诊断与页内错误回传全 ABI 保留。
+transpile_web() {
   echo "==> transpile dist js for old WebViews (esbuild --target=chrome74)"
   DIST=$PIIK/internal/server/webassets/dist
   for js in "$DIST"/assets/*.js; do
@@ -124,7 +146,8 @@ if [ "${SKIP_WEB:-0}" != 1 ]; then
     if (fail) { console.error("transpile gate: " + fail + " file(s) bad"); process.exit(1); }
     console.log("transpile gate: all dist js clean for chrome74 syntax subset");
   ')
-fi
+}
+transpiled=0
 
 # -checklinkname=0: pion's Android interface listing (wlynxg/anet) needs it.
 # v2.5.0: revision var moved to internal/app/buildinfo.Revision (was internal/app.BuildRevision).
@@ -199,6 +222,12 @@ for abi in $ABIS; do
   arch=$(goarch "$abi")
   out=$JNI/$abi
   mkdir -p "$out"
+  # v8a 用原始 dist（不强制兼容老内核）；第一个非 arm64 ABI 前才降级 dist，
+  # 让 v7a/x86_64 引擎带 Chrome 74 可解析的产物。SKIP_WEB 时无 dist 可降。
+  if [ "$abi" != "arm64-v8a" ] && [ "$transpiled" = 0 ] && [ "${SKIP_WEB:-0}" != 1 ]; then
+    transpile_web
+    transpiled=1
+  fi
   if needs_cgo "$abi"; then
     CC_NDK=$(ndk_cc "$abi")
     prepare_vendor

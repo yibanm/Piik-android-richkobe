@@ -1,7 +1,8 @@
 // 老 WebView（Chrome 74 及以下出厂内核）兼容垫片 + 白屏诊断。
 // 本文件必须以 ES5 语法书写——它要在最老的内核里被解析执行，任何新语法都会
-// 让它自己先炸。语法层兼容由构建期 esbuild --target=chrome61 转译 dist 解决
-// （见 scripts/build-native.sh），这里只补运行时缺失的 API。
+// 让它自己先炸。语法层兼容由构建期 esbuild --target=chrome74 转译 dist 解决
+// （见 scripts/build-native.sh；target 不能更低，chrome61 会把 import.meta 换成
+// 空对象导致 new URL(undefined) 崩，两代内核一起炸），这里只补运行时缺失的 API。
 // 注入时机：WebActivity onPageStarted（先于页面自身脚本执行）。
 (function () {
   if (window.__piikOldWv) return;
@@ -53,7 +54,32 @@
   window.addEventListener('load', function () { setTimeout(showBlankDiag, 3000); });
   setTimeout(showBlankDiag, 8000);
 
-  // ---- 运行时 polyfill（全部带存在性守卫，新内核上是 no-op） ----
+  // ---- 页内错误回传壳层（全 ABI 生效，不受兼容门控影响）----
+  // window 错误/未处理 rejection 实时送给 Android 记入引擎日志，诊断复制能带出
+  // 真凶（error boundary 吞掉的渲染异常靠上面的捕获阶段收集）。v8a 包不注入
+  // 兼容垫片，但这条排查通道必须保留（用户 2026-11-01 裁定）。
+  function report(msg) {
+    try {
+      if (window.PiikAndroid && window.PiikAndroid.reportPageError) {
+        window.PiikAndroid.reportPageError(String(msg).slice(0, 500));
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('error', function (ev) {
+    report('pageError: ' + (ev.message || 'error') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || 0));
+  }, true);
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    report('pageRejection: ' + ((r && (r.message || r.stack)) || r));
+  });
+
+  // ---- 运行时 polyfill（仅 32 位 v7a 包注入；v8a 包不强制兼容老内核）----
+  // 门控标记 __piikCompat 由壳层 WebActivity 仅对 v7a 包拼接注入（2026-11-01 用户
+  // 裁定「v8a 不要强制兼容旧版本，只有 v7a 才兼容」）。v8a 设备基本全是现代内核，
+  // 降级与垫片对它是纯开销；万一 v8a 真遇老内核，干净失败（诊断页提示更新系统
+  // WebView）好过「语法过了但 API 缺」的半吊子状态。上面的诊断与错误回传不受此
+  // 门控影响，全 ABI 保留。
+  if (!window.__piikCompat) return;
 
   // globalThis（Chrome 71+）
   try {
@@ -303,20 +329,37 @@
     }
   } catch (e) { note('setCodecPreferences shim failed: ' + e); }
 
-  // ---- 页内错误回传壳层：window 错误/未处理 rejection 实时送给 Android 记入引擎日志，
-  // 诊断复制能带出真凶（error boundary 吞掉的渲染异常靠上面的捕获阶段收集）。
-  function report(msg) {
-    try {
-      if (window.PiikAndroid && window.PiikAndroid.reportPageError) {
-        window.PiikAndroid.reportPageError(String(msg).slice(0, 500));
-      }
-    } catch (e) {}
-  }
-  window.addEventListener('error', function (ev) {
-    report('pageError: ' + (ev.message || 'error') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || 0));
-  }, true);
-  window.addEventListener('unhandledrejection', function (ev) {
-    var r = ev && ev.reason;
-    report('pageRejection: ' + ((r && (r.message || r.stack)) || r));
-  });
+  // Element/Document.getAnimations + CSSAnimation（均为 Chrome 84+）：v2.5.0 起前端
+  // 就在用，且**调用点全部无守卫**——上一版垫片清单漏扫了这两项（2026-11-01 按
+  // v2.5.1 dist 重扫发现，v2.5.0 源码里同样存在）。74 内核上必崩的路径：
+  //   - RoomChatOverlay / RoomReaction 的 onAnimationStart：聊天飘屏与表情动画
+  //     **一开始就必然执行** `event.currentTarget.getAnimations()`，房间里发一条
+  //     消息即抛 TypeError（这是最主要的触发面）；
+  //   - ui/animation.ts 的 replaySvgAnimations：`element.getAnimations()`。由
+  //     BrandMark 的 `bindSvgReplayOnPointerEnter` 绑定 focusin 触发——实测只有
+  //     motion="once" 才绑，而 Header.tsx 那处 BrandMark 在 `<a class="lr-brand">`
+  //     内（聚焦即触发），LauncherForm.tsx 那处在 `<div>` 内不触发；pointerover
+  //     分支对 touch 提前 return，故移动端主要靠 focusin 这条路；
+  //   - participant-motion：`root.getAnimations({ subtree: true })` 同步动画时序。
+  // 补返回空数组的 no-op：所有调用点拿到的都是「没有动画需要重新计时」，语义安全
+  // （动画照常播放，只是不做重播/时序对齐这类纯装饰优化）。
+  try {
+    if (typeof window.Element !== 'undefined' &&
+        typeof window.Element.prototype.getAnimations !== 'function') {
+      window.Element.prototype.getAnimations = function () { return []; };
+    }
+    if (typeof window.Document !== 'undefined' &&
+        typeof window.Document.prototype.getAnimations !== 'function') {
+      window.Document.prototype.getAnimations = function () { return []; };
+    }
+  } catch (e) { note('getAnimations shim failed: ' + e); }
+
+  // CSSAnimation 全局类同样 84+ 才有；`animation instanceof CSSAnimation` 在 74 上
+  // 是 ReferenceError（不是 TypeError，守卫也接不住）。补一个空壳类：instanceof 恒为
+  // false，调用点走「跳过时序对齐」分支，与上面的空数组语义一致。
+  try {
+    if (typeof window.CSSAnimation === 'undefined') {
+      window.CSSAnimation = function CSSAnimation() {};
+    }
+  } catch (e) { note('CSSAnimation shim failed: ' + e); }
 })();
