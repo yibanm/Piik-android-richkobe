@@ -106,8 +106,22 @@ class PiikService : Service() {
                 if (process === p) {
                     process = null
                     cleanup()
-                    if (code == 0 || stopping) HostState.update(HostState.Phase.STOPPED)
-                    else HostState.update(HostState.Phase.FAILED, message = getString(R.string.host_error_crashed, code, HostState.logText().takeLast(800)))
+                    when {
+                        code == 0 || stopping -> HostState.update(HostState.Phase.STOPPED)
+                        // SIGPIPE（141）：引擎收尾路径的已知缺陷，真机实证两种形态——
+                        // ① 共享正常结束后采集进程先退、引擎写已关闭管道（日志见
+                        //    share-ended failed:false 后 public-tunnel output-read-failed）；
+                        // ② 采集未成立（用户没点系统授权）采集进程 exit 2 中止后同样
+                        //    在收尾吃 SIGPIPE。两者都不是逻辑崩溃（真崩溃是 panic/segv，
+                        //    退出码 2/134/139 等）。显示错误页属误报，故按停止处理；
+                        //    保留 logcat 与引擎日志痕迹供排查，不一刀切吞掉其他退出码。
+                        code == EXIT_SIGPIPE -> {
+                            Log.w(TAG, "engine exited with SIGPIPE during teardown; treated as stopped")
+                            HostState.appendLog("engine exit 141 (SIGPIPE, teardown)")
+                            HostState.update(HostState.Phase.STOPPED)
+                        }
+                        else -> HostState.update(HostState.Phase.FAILED, message = getString(R.string.host_error_crashed, code, HostState.logText().takeLast(800)))
+                    }
                     stopSelf()
                 }
             }, "piik-wait").start()
@@ -252,6 +266,8 @@ class PiikService : Service() {
         private const val CHANNEL = "hosting"
         private const val NOTIFICATION_ID = 1
         private const val OPEN_MARKER = "PIIK_ANDROID_OPEN "
+        /** 128 + SIGPIPE(13)：引擎收尾写已关闭管道的退出码，非逻辑崩溃。 */
+        private const val EXIT_SIGPIPE = 141
         const val ACTION_START = "com.richkobe.piikandroid.START"
         const val ACTION_STOP = "com.richkobe.piikandroid.STOP"
 
