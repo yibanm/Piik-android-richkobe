@@ -559,8 +559,25 @@ class WebActivity : Activity() {
 
     @Deprecated("Platform back handling without AndroidX")
     override fun onBackPressed() {
+        if (customView != null) {
+            customCallback?.onCustomViewHidden()
+            return
+        }
+        // 页内有打开的浮层（观看选项/弹幕菜单等）时，返回键先关浮层、消费本次
+        // 返回，不能直接离开页面——否则用户开着菜单按返回会被踢出共享页
+        // （2026-11-02 真机反馈「返回有问题」的根因之一）。WebView 的 JS 求值
+        // 是异步的，故返回逻辑整体放进回调；老内核无 popover API 时查询返回
+        // false（try/catch 兜底），行为与从前一致。
+        web.evaluateJavascript(POPOVER_OPEN_JS) { result ->
+            runOnUiThread {
+                if (result == "true") web.evaluateJavascript(POPOVER_CLOSE_JS, null)
+                else backWithoutPopover()
+            }
+        }
+    }
+
+    private fun backWithoutPopover() {
         when {
-            customView != null -> customCallback?.onCustomViewHidden()
             // 主机页是单页应用（launcher ↔ 房间页之间会产生网页历史）。若让返回键
             // 走网页后退，用户会一直在这几页里打转，永远回不到原生主页，也就拿不到
             // 主页的「停止共享」按钮，只能杀进程。所以主机模式下返回键直接回主页，
@@ -600,6 +617,13 @@ class WebActivity : Activity() {
         const val MODE_WATCH = "watch"
         const val MODE_HOST = "host"
         private const val REQUEST_WEB_PERMISSION = 3
+
+        /** 页内是否有打开的浮层。老内核无 popover API，选择器抛错则按 false。 */
+        private const val POPOVER_OPEN_JS =
+            "(function(){try{return String(!!document.querySelector(':popover-open'));}catch(e){return 'false';}})();"
+
+        private const val POPOVER_CLOSE_JS =
+            "(function(){try{var p=document.querySelectorAll(':popover-open');for(var i=0;i<p.length;i++)p[i].hidePopover();}catch(e){}})();"
 
         /**
          * 自动驱动脚本（ES5，老内核也要能跑）。轮询 DOM 逐步推进：

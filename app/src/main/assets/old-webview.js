@@ -73,6 +73,23 @@
     report('pageRejection: ' + ((r && (r.message || r.stack)) || r));
   });
 
+  // ---- 浮层面板内部滚动时拦截上游重定位（全 ABI，修「一滑就弹、点不了」）----
+  // 上游浮层定位（use-anchored-popover）在 window 上挂了**捕获阶段** scroll 监听：
+  // 面板内部滚动也会触发重定位，重定位重写面板 top/maxHeight 使面板跳一下，
+  // 跳动又产生滚动事件再触发重定位——循环弹跳，且手指按下时位置在跳导致点不中
+  // （2026-11-02 用户真机反馈「一往下滑就一直弹弹弹，无法正常点击」）。
+  // 面板内部滚动时锚点根本没动，本就不需要重定位。本拦截器必须**先于**上游监听
+  // 注册（onPageStarted 注入早于页面脚本），对源自 [popover] 面板内部的 scroll
+  // 调 stopImmediatePropagation，挡住同阶段后注册的上游监听；文档级/视口级滚动
+  // （target 非元素节点）放行，锚点或视口真变化时上游照常重定位。
+  window.addEventListener('scroll', function (ev) {
+    var t = ev.target;
+    if (!t || t.nodeType !== 1) return; // document / visualViewport 的滚动放行
+    try {
+      if (t.closest && t.closest('[popover]')) ev.stopImmediatePropagation();
+    } catch (e) {}
+  }, true);
+
   // ---- 运行时 polyfill（仅 32 位 v7a 包注入；v8a 包不强制兼容老内核）----
   // 门控标记 __piikCompat 由壳层 WebActivity 仅对 v7a 包拼接注入（2026-11-01 用户
   // 裁定「v8a 不要强制兼容旧版本，只有 v7a 才兼容」）。v8a 设备基本全是现代内核，
