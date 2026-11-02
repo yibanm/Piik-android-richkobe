@@ -84,11 +84,6 @@ if [ -z "${PIIK_SRC:-}" ]; then
     git -C "$PIIK" apply "$patch"
   done
 fi
-if [ "${SKIP_WEB:-0}" != 1 ]; then
-  command -v npm >/dev/null || { echo "missing: npm (Node.js)" >&2; exit 1; }
-  echo "==> Piik web interface"
-  (cd "$PIIK" && npm ci --no-audit --no-fund && npm run build:web)
-fi
 
 # 老 WebView 兼容（白屏根因修复）：上游 vite.config.ts 未设 build.target，
 # 产物含 Chrome 74（Android 9 出厂 WebView）无法解析的语法（?. / ?? / 逻辑赋值等，
@@ -100,12 +95,14 @@ fi
 # chrome74 原生支持 import.meta / 动态 import / 类字段，esbuild 只降级它缺的
 # ?./??/逻辑赋值/数字分隔符等，两代内核都正常。只降语法不补运行时 API——缺的
 # Promise.allSettled / replaceAll / Object.hasOwn 等由壳层 WebActivity.kt 的
-# assets/old-webview.js 在 onPageStarted 注入（且仅 v7a 包注入，见下）。
-# **降级时机（2026-11-01 用户裁定「v8a 不强制兼容旧版本，只有 v7a 才兼容」）**：
-# arm64-v8a 引擎用**原始 dist**（v8a 设备基本全是现代内核，降级是纯开销），
-# 第一个非 arm64 ABI 构建前才原地降级 dist，v7a/x86_64 引擎带降级产物。
-# 壳层侧对应：old-webview.js 的兼容垫片仅对 v7a 包注入（__piikCompat 门控），
-# 诊断与页内错误回传全 ABI 保留。
+# assets/old-webview.js 在 onPageStarted 注入。
+# **降级必须对所有 ABI 的包都做（写死，2026-11-02 回归教训）**：引擎内嵌的 dist
+# 不只服务本机 WebView，还会**分发给连进房间的观看端**（含公开邀请隧道）。曾按
+# 「v8a 不强制兼容老内核」把 arm64 包改成带原始 dist，结果 64 位手机开的房间把
+# 未降级产物发给 WebView 74 的手表观看端，手表直接 SyntaxError「无法访问」
+# （真机诊断页实锤：Unexpected token = @ .../assets/index-*.js）。按 ABI 分开的
+# 只能是**运行时垫片注入**（壳层本地行为，v7a 包注入、v8a 包不注入），语法降级
+# 是产物属性，一律全做。
 transpile_web() {
   echo "==> transpile dist js for old WebViews (esbuild --target=chrome74)"
   DIST=$PIIK/internal/server/webassets/dist
@@ -147,7 +144,15 @@ transpile_web() {
     console.log("transpile gate: all dist js clean for chrome74 syntax subset");
   ')
 }
-transpiled=0
+
+# 构建 web 界面并立即降级（所有 ABI 的引擎都带降级产物——产物会分发给观看端，
+# 见上方 transpile_web 注释的 2026-11-02 回归教训）。bash 函数须先定义后调用。
+if [ "${SKIP_WEB:-0}" != 1 ]; then
+  command -v npm >/dev/null || { echo "missing: npm (Node.js)" >&2; exit 1; }
+  echo "==> Piik web interface"
+  (cd "$PIIK" && npm ci --no-audit --no-fund && npm run build:web)
+  transpile_web
+fi
 
 # -checklinkname=0: pion's Android interface listing (wlynxg/anet) needs it.
 # v2.5.0: revision var moved to internal/app/buildinfo.Revision (was internal/app.BuildRevision).
@@ -222,12 +227,6 @@ for abi in $ABIS; do
   arch=$(goarch "$abi")
   out=$JNI/$abi
   mkdir -p "$out"
-  # v8a 用原始 dist（不强制兼容老内核）；第一个非 arm64 ABI 前才降级 dist，
-  # 让 v7a/x86_64 引擎带 Chrome 74 可解析的产物。SKIP_WEB 时无 dist 可降。
-  if [ "$abi" != "arm64-v8a" ] && [ "$transpiled" = 0 ] && [ "${SKIP_WEB:-0}" != 1 ]; then
-    transpile_web
-    transpiled=1
-  fi
   if needs_cgo "$abi"; then
     CC_NDK=$(ndk_cc "$abi")
     prepare_vendor

@@ -223,13 +223,18 @@ class WebActivity : Activity() {
      */
     private fun injectOldWebViewShims(view: WebView) {
         try {
-            // 诊断/回传部分全 ABI 注入；兼容垫片仅 v7a（拼接门控标记）。
-            val gate = if (isV7aPackage()) "window.__piikCompat=true;" else ""
+            // 兼容垫片按 **WebView 内核版本** 门控（<84 才注入），不按包 ABI：
+            // 真机实证 64 位设备（手表）也可能跑 WebView 74（2026-11-02 诊断：
+            // ABI 首位 arm64-v8a + WebView 74.0.3729.23），按 ABI 门控会让它永远
+            // 拿不到垫片。内核 ≥84 时垫片全部有存在性守卫、本就是 no-op，但连注入
+            // 都省掉，符合「现代内核不背兼容包袱」。诊断与错误回传不受门控影响。
+            val gate = if (needsCompatShims()) "window.__piikCompat=true;" else ""
             val script = oldWebViewSource
                 ?: assets.open("old-webview.js").bufferedReader().use { it.readText() }
                     .also { oldWebViewSource = it }
             view.evaluateJavascript(gate + script, null)
-            if (isV7aPackage()) view.evaluateJavascript(POLYFILLS, null)
+            // 剪贴板/分享/画中画桥接是功能而非兼容垫片，全内核注入。
+            view.evaluateJavascript(POLYFILLS, null)
         } catch (e: Exception) {
             Log.w("PiikWeb", "old-webview shims inject failed", e)
         }
@@ -237,8 +242,18 @@ class WebActivity : Activity() {
 
     private var oldWebViewSource: String? = null
 
-    /** 当前进程是否 32 位 v7a 包（决定要不要注入老内核兼容垫片）。 */
-    private fun isV7aPackage(): Boolean = Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a"
+    /** 垫片覆盖的最新 API 是 Chrome 84（getAnimations/CSSAnimation），内核 ≥84 无需注入。 */
+    private fun needsCompatShims(): Boolean = webViewMajorVersion() < 84
+
+    private var webViewMajor = -1
+    private fun webViewMajorVersion(): Int {
+        if (webViewMajor >= 0) return webViewMajor
+        webViewMajor = runCatching {
+            android.webkit.WebView.getCurrentWebViewPackage()?.versionName
+                ?.substringBefore('.')?.toIntOrNull() ?: 0
+        }.getOrDefault(0)
+        return webViewMajor
+    }
 
     /**
      * 悬浮球「开始共享」的自动驱动：壳层替用户点完「进房/建房 → 开始共享」整条
@@ -357,6 +372,7 @@ class WebActivity : Activity() {
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            HostState.notePage(url, mode)
             injectOldWebViewShims(view)
             injectIceFix(view, url)
             injectSmallScreenCss(view)

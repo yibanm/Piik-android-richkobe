@@ -311,10 +311,24 @@ class MainActivity : Activity() {
             appendLine("WebView: $wv")
             appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
             appendLine("屏幕: ${cfg.screenWidthDp}x${cfg.screenHeightDp}dp smallest=${cfg.smallestScreenWidthDp}dp density=${resources.displayMetrics.densityDpi}")
-            appendLine("手表形态判定(v7a+小屏): ${Build.SUPPORTED_ABIS.firstOrNull() == "armeabi-v7a" && cfg.smallestScreenWidthDp < 300}")
+            // 与 WebActivity.isWatchFormFactor 同一判据（矮屏小屏），旧版写「v7a+小屏」
+            // 是过期门控，诊断会报出与实际注入行为相反的值（2026-11-02 手表诊断实锤）。
+            appendLine("手表形态判定(矮屏小屏<400dp且<480dp): ${cfg.smallestScreenWidthDp < 400 && cfg.screenHeightDp < 480}")
             appendLine("WiFi: ${NetInfo.onWifi(this@MainActivity)} LAN: ${runCatching { NetInfo.lanAddresses(this@MainActivity) }.getOrDefault("?")}")
             appendLine("DNS: ${runCatching { NetInfo.dnsServers(this@MainActivity) }.getOrDefault("?")}")
             appendLine("共享状态: ${HostState.phase} 房间已创建: ${HostState.roomActive} 引擎页: ${HostState.pageUrl ?: "(无)"}")
+            // 区分「本机 hosting 页」与「观看他人房间页」：2026-11-02 手表故障属后者
+            // （看手机开的公开邀请房间，页面来自隧道，产物由对方引擎分发）。
+            appendLine("当前页: ${HostState.lastPageMode ?: "(未打开)"} ${HostState.lastPageUrl ?: ""}")
+            // 垫片注入判定：按 WebView 内核主版本（<84 注入），便于核对老内核设备是否真拿到垫片。
+            // wv 形如「包名 版本」（com.android.webview 74.0.3729.23），取空格后的主版本。
+            val wvMajor = runCatching { wv.substringAfterLast(' ').substringBefore('.').toIntOrNull() ?: 0 }.getOrDefault(0)
+            appendLine("垫片判定: WebView主版本=$wvMajor 注入兼容垫片=${wvMajor in 1..83}")
+            val pageErrs = HostState.logText().lineSequence().filter { it.startsWith("[page]") }.toList().takeLast(8)
+            if (pageErrs.isNotEmpty()) {
+                appendLine("---- 页内错误(尾8条) ----")
+                pageErrs.forEach { appendLine(it) }
+            }
             appendLine("---- 引擎最近输出(尾3000字) ----")
             append(HostState.logText().takeLast(3000))
         }

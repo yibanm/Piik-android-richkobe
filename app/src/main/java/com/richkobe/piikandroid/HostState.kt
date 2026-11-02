@@ -73,6 +73,19 @@ object HostState {
     /** Piik asked to open a non-local page (e.g. a release page). */
     fun openExternal(url: String) = main.post { externalListeners.forEach { it(url) } }
 
+    /**
+     * 最近一次 WebActivity 加载的页面 URL 与模式（host/watch）。诊断用：区分
+     * 「本机 hosting 页连不上」与「观看他人房间页连不上」（2026-11-02 手表故障
+     * 属后者——看的是手机开的公开邀请房间，页面来自隧道而非本机引擎）。
+     */
+    @Volatile var lastPageUrl: String? = null
+    @Volatile var lastPageMode: String? = null
+
+    fun notePage(url: String?, mode: String) {
+        if (url != null) lastPageUrl = url
+        lastPageMode = mode
+    }
+
     fun appendLog(line: String) = synchronized(log) {
         log.addLast(line)
         while (log.size > 400) log.removeFirst()
