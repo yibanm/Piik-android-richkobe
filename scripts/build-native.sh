@@ -94,15 +94,15 @@ fi
 # 变 new URL(undefined) 直接 Invalid URL——连现代内核一起炸（2026-10-27 实测）。
 # chrome74 原生支持 import.meta / 动态 import / 类字段，esbuild 只降级它缺的
 # ?./??/逻辑赋值/数字分隔符等，两代内核都正常。只降语法不补运行时 API——缺的
-# Promise.allSettled / replaceAll / Object.hasOwn 等由壳层 WebActivity.kt 的
-# assets/old-webview.js 在 onPageStarted 注入。
+# Promise.allSettled / replaceAll / Object.hasOwn / getAnimations 等由壳层
+# WebActivity.kt 的 assets/old-webview.js 在 onPageStarted 注入，且**按本机
+# WebView 内核主版本 <84 门控**（不按包 ABI、不按屏幕尺寸）。
 # **降级必须对所有 ABI 的包都做（写死，2026-11-02 回归教训）**：引擎内嵌的 dist
 # 不只服务本机 WebView，还会**分发给连进房间的观看端**（含公开邀请隧道）。曾按
 # 「v8a 不强制兼容老内核」把 arm64 包改成带原始 dist，结果 64 位手机开的房间把
 # 未降级产物发给 WebView 74 的手表观看端，手表直接 SyntaxError「无法访问」
-# （真机诊断页实锤：Unexpected token = @ .../assets/index-*.js）。按 ABI 分开的
-# 只能是**运行时垫片注入**（壳层本地行为，v7a 包注入、v8a 包不注入），语法降级
-# 是产物属性，一律全做。
+# （真机诊断页实锤：Unexpected token = @ .../assets/index-*.js）。语法降级是
+# 产物属性，一律全做；按运行时能力分开的只有壳层垫片注入。
 transpile_web() {
   echo "==> transpile dist js for old WebViews (esbuild --target=chrome74)"
   DIST=$PIIK/internal/server/webassets/dist

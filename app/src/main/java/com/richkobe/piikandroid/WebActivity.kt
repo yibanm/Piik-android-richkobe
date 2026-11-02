@@ -218,8 +218,9 @@ class WebActivity : Activity() {
      * 白屏时展示中文诊断页；POLYFILLS 是剪贴板/分享/画中画桥接。
      * onPageStarted 注入保证垫片先于页面脚本运行；onPageFinished 再注入
      * 一次作为 SPA 路由切换后的兜底（守卫使其成为 no-op）。
-     * 兼容垫片部分仅对 32 位 v7a 包注入（用户 2026-11-01 裁定 v8a 不强制
-     * 兼容老内核）；诊断与错误回传全 ABI 保留。
+     * 兼容垫片按**本机 WebView 内核主版本 <84** 门控注入（与包 ABI、屏幕尺寸均
+     * 无关：64 位设备也可能跑老内核，2026-11-02 手表实证）；诊断与错误回传全
+     * ABI 保留。POLYFILLS 是功能桥接，全内核注入。
      */
     private fun injectOldWebViewShims(view: WebView) {
         try {
@@ -273,18 +274,17 @@ class WebActivity : Activity() {
     private var autoDrive = false
 
     /**
-     * 小屏（手表等）压缩布局。用 max-width media query 门控：只有物理小屏设备
-     * 命中，arm64/v7a 手机零影响——等价于「只改 v7a」（手表均为 32 位跑 v7a 包），
-     * 且不会误伤同样跑 v7a 包的 32 位手机。注入而非改 dist：防上游升级冲掉。
+     * 小屏（手表等）**布局压缩**（UI 适配，与老内核兼容无关——兼容按 WebView
+     * 内核版本判定，见 injectOldWebViewShims）。门控=屏幕形态 [isWatchFormFactor]：
+     * 手表（屏高 ≤393dp，含 64 位手表）命中，手机（屏高 ≥560dp）不命中。
+     * CSS 内的 max-width media query 是第三层兜底。注入而非改 dist：防上游升级冲掉。
      * 幂等：style 标签带 id，重复注入 no-op。
      */
     private fun injectSmallScreenCss(view: WebView) {
-        // 双重门控（用户硬性要求：手表改动不得波及 V8a，也不得误伤 v7a 手机）：
-        // ① ABI = armeabi-v7a（手表均为 32 位；V8a 包到此直接返回，一行不注入）；
-        // ② 物理小屏 smallestScreenWidthDp < 300（手表约 180–230dp，手机 ≥320dp，
-        //    该值不随旋转变化）。CSS 内的 media query 是第三层兜底。
         // 2026-10-27 教训：单靠 media query(max-width:480px) 门控失败——max-width
-        // 是 CSS px(≈dp)，手机视口 360–430dp 全命中，V8a 手机按钮被压没。
+        // 是 CSS px(≈dp)，手机视口 360–430dp 全命中，V8a 手机按钮被压没；故外层
+        // 必须有设备级判定。2026-10-27 同日真机又推翻「按 ABI 门控」：64 位手表装
+        // V8a 包会完全拿不到压缩布局，改按屏幕形态。
         if (!isWatchFormFactor()) return
         view.evaluateJavascript(
             "(function(){if(document.getElementById('piik-small-screen'))return;" +
@@ -694,10 +694,12 @@ class WebActivity : Activity() {
 """
 
         /**
-         * 小屏压缩布局（手表）。双重门控：**仅 armeabi-v7a 包 + 物理小屏**才注入——
-         * 用户硬性要求手表改动不得波及 arm64-v8a；且 media query 的 max-width 是
-         * CSS px（≈dp），手机视口普遍 360–430dp 全 <480，单靠 media query 会误伤
-         * 手机（2026-10-27 实测：V8a 手机创建房间按钮被压没），故必须叠加 ABI 门控。
+         * 小屏压缩布局（手表）CSS。门控见 [isWatchFormFactor]（屏幕形态：矮屏小屏），
+         * **与包 ABI 无关**——旧注释的「仅 armeabi-v7a 包 + 物理小屏双重门控」是
+         * 2026-10-27 当天就被真机推翻的过期表述（64 位手表装 V8a 包）。
+         * media query 的 max-width 是 CSS px（≈dp），手机视口普遍 360–430dp 全
+         * <480，单靠它会误伤手机（2026-10-27 实测：V8a 手机创建房间按钮被压没），
+         * 故外层必须有设备级判定。
          * 选择器纪律（2026-10-27 踩坑）：`.lr-comic-tip-wrap` 是 Tooltip 的**外壳**
          * （包着触发按钮），display:none 会把「开始分享/加入房间」按钮一起藏掉；
          * 只能藏气泡 `.lr-comic-tip` 本身。注入而非改 dist：防上游升级冲掉。

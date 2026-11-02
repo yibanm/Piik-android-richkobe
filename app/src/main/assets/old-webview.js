@@ -56,8 +56,8 @@
 
   // ---- 页内错误回传壳层（全 ABI 生效，不受兼容门控影响）----
   // window 错误/未处理 rejection 实时送给 Android 记入引擎日志，诊断复制能带出
-  // 真凶（error boundary 吞掉的渲染异常靠上面的捕获阶段收集）。v8a 包不注入
-  // 兼容垫片，但这条排查通道必须保留（用户 2026-11-01 裁定）。
+  // 真凶（error boundary 吞掉的渲染异常靠上面的捕获阶段收集）。兼容垫片按内核
+  // 版本门控、新内核不注入，但这条排查通道全内核保留。
   function report(msg) {
     try {
       if (window.PiikAndroid && window.PiikAndroid.reportPageError) {
@@ -90,12 +90,11 @@
     } catch (e) {}
   }, true);
 
-  // ---- 运行时 polyfill（仅 32 位 v7a 包注入；v8a 包不强制兼容老内核）----
-  // 门控标记 __piikCompat 由壳层 WebActivity 仅对 v7a 包拼接注入（2026-11-01 用户
-  // 裁定「v8a 不要强制兼容旧版本，只有 v7a 才兼容」）。v8a 设备基本全是现代内核，
-  // 降级与垫片对它是纯开销；万一 v8a 真遇老内核，干净失败（诊断页提示更新系统
-  // WebView）好过「语法过了但 API 缺」的半吊子状态。上面的诊断与错误回传不受此
-  // 门控影响，全 ABI 保留。
+  // ---- 运行时 polyfill（按 WebView 内核版本门控：<84 才注入）----
+  // 门控标记 __piikCompat 由壳层 WebActivity 按「内核主版本 <84」拼接注入
+  // （2026-11-02 终态：不按包 ABI、不按屏幕尺寸——64 位设备也可能跑老内核，
+  // 手表真机实证 ABI 首位 arm64-v8a + WebView 74）。本文件整体全 ABI 注入，
+  // 因为诊断与错误回传（上方）不受门控影响；走到这里 return 只跳过兼容垫片。
   if (!window.__piikCompat) return;
 
   // globalThis（Chrome 71+）
