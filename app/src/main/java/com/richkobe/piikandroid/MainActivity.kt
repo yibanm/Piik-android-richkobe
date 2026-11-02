@@ -311,9 +311,10 @@ class MainActivity : Activity() {
             appendLine("WebView: $wv")
             appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
             appendLine("屏幕: ${cfg.screenWidthDp}x${cfg.screenHeightDp}dp smallest=${cfg.smallestScreenWidthDp}dp density=${resources.displayMetrics.densityDpi}")
-            // 与 WebActivity.isWatchFormFactor 同一判据（矮屏小屏），旧版写「v7a+小屏」
-            // 是过期门控，诊断会报出与实际注入行为相反的值（2026-11-02 手表诊断实锤）。
-            appendLine("手表形态判定(矮屏小屏<400dp且<480dp): ${cfg.smallestScreenWidthDp < 400 && cfg.screenHeightDp < 480}")
+            // 与 WebActivity.isWatchFormFactor 同一判据（矮屏小屏）。注意这是**布局压缩**
+            // 的门控（手表小屏 UI 适配），与老内核兼容无关——兼容按 WebView 内核版本判
+            // （见下行垫片判定），两者维度不同，诊断里分开标注防误读。
+            appendLine("手表形态判定(布局压缩门控,矮屏小屏): ${cfg.smallestScreenWidthDp < 400 && cfg.screenHeightDp < 480}")
             appendLine("WiFi: ${NetInfo.onWifi(this@MainActivity)} LAN: ${runCatching { NetInfo.lanAddresses(this@MainActivity) }.getOrDefault("?")}")
             appendLine("DNS: ${runCatching { NetInfo.dnsServers(this@MainActivity) }.getOrDefault("?")}")
             appendLine("共享状态: ${HostState.phase} 房间已创建: ${HostState.roomActive} 引擎页: ${HostState.pageUrl ?: "(无)"}")
