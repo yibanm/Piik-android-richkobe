@@ -11,3 +11,5 @@ app/src/main/jniLibs/
 进度.md
 .claude/
 key.properties
+# 本机构建回落的发布产物（CI 产物另由 Actions 提供）
+dist-release/

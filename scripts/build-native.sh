@@ -16,31 +16,40 @@ set -euo pipefail
 
 PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
 # Pinned: the patch and the capture contract (protocol 7) were verified against it.
-# v2.5.1 — 分享恢复与远程控制稳定性：H.264 编码选择改善，重连/换源/丢包后的画面恢复，
-# 换源失败时保留正常分享；声音与房间语音连续、切换播放窗口不再双重声音；SFU 恢复
-# 测试发包预算修正（避免误报画面停顿）。
-# 已核对（2026-11-01，本机实跑构建链，非静态推断）：
-#   - probeProtocol 仍为 7；Capabilities 字段集与 v2.5.0 完全相同
-#     （remoteInput / captureBorderControl / microphone / processAudioExclusion
-#     等仍是 omitempty，Kotlin probe JSON 不传即兼容，DisallowUnknownFields 不受影响）；
-#   - 采集参数集不变；
+# v2.6.0 — 中继额度与分享恢复：房间可设默认转发上限（观众可跟随/调高/调低，0=只收不转）；
+# 建线期间加入与连接重建后的恢复改善（**取消的连接尝试不再阻碍后续重试**）；房主本地预览
+# 播不出来时原生分享继续；附属菜单滚动跳动、不可见提示拦截点击的修复；终端关闭时退出流程；
+# 压缩库升级（GO-2026-6865，zstd 双块帧 panic）。
+# 已核对（2026-11-07，本机实跑构建链 + 与 v2.5.1 精确 diff，非静态推断）：
+#   - probeProtocol 仍为 7；internal/app/nativecapture/probe.go 与 v2.5.1 **零 diff**，
+#     Capabilities 字段集逐字节相同（remoteInput / captureBorderControl / microphone /
+#     processAudioExclusion 等仍是 omitempty，Kotlin probe JSON 不传即兼容，
+#     DisallowUnknownFields 不受影响）；
+#   - 采集契约面只有 stream.go 变化：新增结构化失败码 Failure/FailureDetails，不改帧格式；
 #   - go.mod 仍 go 1.27.3、package.json engines 仍 node >=24 <27（工具链要求不变）；
-#   - vite 仍无 build.target（dist 转译+AST 门禁链路继续有效）；
-#   - internal/app/buildinfo 与 v2.5.0 逐字节相同（Release + Revision 双变量，
-#     LDFLAGS 注入 Revision 的路径不变）；
+#   - vite 仍无 build.target（只新增 optimizeDeps.entries，dist 转译+AST 门禁链路继续必需）；
+#   - internal/app/buildinfo 仍 Release + Revision 双变量，LDFLAGS 注入 Revision 路径不变；
+#   - cmd/piik-app 改用新包 internal/processsignal.NotifyContext（多注册 SIGHUP，尊重
+#     nohup 继承的 ignore）。该包无 build tag，Android 可编译；与壳层处置的引擎退出码
+#     141（SIGPIPE 收尾）无关；
 #   - 补丁触及的四个文件（cmd/piik-app、browser/open.go、lan/addresses.go、
-#     nativecapture/probe.go）在 v2.5.1 均存在，补丁 git apply --check 干净通过。
-# **新增依赖形态（v2.5.1 特有，必须留意）**：go.mod 多了两条 replace——
+#     nativecapture/probe.go）在 v2.6.0 均存在，补丁 git apply --check 干净通过；
+#   - 垫片重扫：v2.5.1→v2.6.0 的新增行只用 showPopover / hidePopover / closest，
+#     **无新增无守卫的新 runtime API**，assets/old-webview.js 垫片清单无需扩充；
+#   - 上游对「附属菜单滚动跳动」的修复只删掉了测量前扩张 scrollport 的那行 maxHeight 写入，
+#     window 捕获阶段 scroll 监听**仍在**——与 old-webview.js 里的面板内滚动拦截器修的是
+#     同一条链的不同环节，不冲突，两者都保留。
+# **依赖形态（沿用 v2.5.1）**：go.mod 有两条 replace——
 #   - github.com/pion/webrtc/v4 => github.com/TNTcraftHIM/pion-webrtc/v4
 #     v4.0.0-20261029063205-6ed9e55c5935（H.264 equivalent profiles，上游 PR #3668 未合）；
-#   - github.com/livekit/livekit-server => github.com/TNTcraftHIM/livekit ...（既存）。
+#   - github.com/livekit/livekit-server => github.com/TNTcraftHIM/livekit ...。
 # 两者都是 TNTcraftHIM 自己的 fork，走 GOPROXY 正常拉取（本机实测需 goproxy.cn，
 # proxy.golang.org 国内不可达）。fork 属 Apache-2.0（与原 pion 同许可证），无传染性问题。
-# 上游 mobile/（官方 Android 桥）目录结构在 v2.5.1 扩充为 mobile/{android,bridge,cloudflared}，
-# 但 mobile/cloudflared/fallback_test.go 的测试依赖依旧残缺（quic-go 缺 go.sum 条目、
-# rs/zerolog 未声明），go mod vendor 仍会失败——prepare_vendor 里删 mobile/ 的处置继续有效
-# （已实跑验证：删后 vendor exit 0，产物 183MB）。
-PIIK_REF=${PIIK_REF:-eef70ffda0ffddce6aec109521ab70871e5b7c2f}
+# 上游 mobile/（官方 Android 桥）目录仍为 mobile/{android,bridge,cloudflared}，且
+# mobile/cloudflared/fallback_test.go 的测试依赖依旧残缺（rs/zerolog 在 go.mod 中 0 处、
+# quic-go 缺 go.sum 条目），go mod vendor 仍会失败——prepare_vendor 里删 mobile/ 的处置
+# 继续有效。
+PIIK_REF=${PIIK_REF:-31acd8982804230b15384e450bb558dffce01574}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
 CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
 ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}

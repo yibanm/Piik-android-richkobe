@@ -347,7 +347,9 @@
 
   // Element/Document.getAnimations + CSSAnimation（均为 Chrome 84+）：v2.5.0 起前端
   // 就在用，且**调用点全部无守卫**——上一版垫片清单漏扫了这两项（2026-11-01 按
-  // v2.5.1 dist 重扫发现，v2.5.0 源码里同样存在）。74 内核上必崩的路径：
+  // v2.5.1 dist 重扫发现，v2.5.0 源码里同样存在；2026-11-07 按 v2.6.0 再扫一遍，
+  // 新增行只用 showPopover / hidePopover / closest，本清单无需扩充）。
+  // 74 内核上必崩的路径：
   //   - RoomChatOverlay / RoomReaction 的 onAnimationStart：聊天飘屏与表情动画
   //     **一开始就必然执行** `event.currentTarget.getAnimations()`，房间里发一条
   //     消息即抛 TypeError（这是最主要的触发面）；

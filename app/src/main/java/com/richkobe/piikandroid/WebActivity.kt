@@ -261,10 +261,10 @@ class WebActivity : Activity() {
      * 网页流程，用户只剩系统投屏授权那一下（Android 安全墙，无法绕过）。
      * 仅在以 [EXTRA_AUTODRIVE] 启动主机页时注入，手动打开主页不触发。
      * 轮询 DOM 而非一次性点击：launcher→房间页是 SPA pushState，不重载页面。
-     * 选择器按上游 v2.5.1 实测：进房 `a.lr-btn.is-primary`、LAN `select`、
-     * 提交 `button[type=submit]`、主控 `#host-start-share`；模式由引擎
-     * `client.json.mode` 持久化，无需点选。上游改版致选择器失效时轮询超时
-     * 自动放弃（回退为现状：用户自己点），不会误点。
+     * 选择器按上游 v2.6.0 实测（2026-11-07 逐个 grep 上游源码确认仍在）：进房
+     * `a.lr-btn.is-primary`、LAN `select`、提交 `button[type=submit]`、主控
+     * `#host-start-share`；模式由引擎 `client.json.mode` 持久化，无需点选。
+     * 上游改版致选择器失效时轮询超时自动放弃（回退为现状：用户自己点），不会误点。
      */
     private fun injectAutoDrive(view: WebView) {
         if (mode != MODE_HOST || !autoDrive) return
