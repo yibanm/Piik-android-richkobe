@@ -311,9 +311,7 @@ class MainActivity : Activity() {
             appendLine("WebView: $wv")
             appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
             appendLine("屏幕: ${cfg.screenWidthDp}x${cfg.screenHeightDp}dp smallest=${cfg.smallestScreenWidthDp}dp density=${resources.displayMetrics.densityDpi}")
-            // 与 WebActivity.isWatchFormFactor 同一判据（矮屏小屏）。注意这是**布局压缩**
-            // 的门控（手表小屏 UI 适配），与老内核兼容无关——兼容按 WebView 内核版本判
-            // （见下行垫片判定），两者维度不同，诊断里分开标注防误读。
+            // 小屏布局与运行时接口兼容是两套独立判据。
             appendLine("手表形态判定(布局压缩门控,矮屏小屏): ${cfg.smallestScreenWidthDp < 400 && cfg.screenHeightDp < 480}")
             appendLine("WiFi: ${NetInfo.onWifi(this@MainActivity)} LAN: ${runCatching { NetInfo.lanAddresses(this@MainActivity) }.getOrDefault("?")}")
             appendLine("DNS: ${runCatching { NetInfo.dnsServers(this@MainActivity) }.getOrDefault("?")}")
@@ -321,10 +319,7 @@ class MainActivity : Activity() {
             // 区分「本机 hosting 页」与「观看他人房间页」：2026-11-02 手表故障属后者
             // （看手机开的公开邀请房间，页面来自隧道，产物由对方引擎分发）。
             appendLine("当前页: ${HostState.lastPageMode ?: "(未打开)"} ${HostState.lastPageUrl ?: ""}")
-            // 垫片注入判定：按 WebView 内核主版本（<84 注入），便于核对老内核设备是否真拿到垫片。
-            // wv 形如「包名 版本」（com.android.webview 74.0.3729.23），取空格后的主版本。
-            val wvMajor = runCatching { wv.substringAfterLast(' ').substringBefore('.').toIntOrNull() ?: 0 }.getOrDefault(0)
-            appendLine("垫片判定: WebView主版本=$wvMajor 注入兼容垫片=${wvMajor in 1..83}")
+            appendLine("兼容策略: 按页面实际缺失的 API 补齐，不按 ABI、屏幕或内核版本截断")
             val pageErrs = HostState.logText().lineSequence().filter { it.startsWith("[page]") }.toList().takeLast(8)
             if (pageErrs.isNotEmpty()) {
                 appendLine("---- 页内错误(尾8条) ----")

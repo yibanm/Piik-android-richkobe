@@ -17,12 +17,25 @@ object Codecs {
 
     val avcEncoders: List<Encoder> by lazy {
         val all = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
-            info.isEncoder && !info.isAlias &&
+            info.isEncoder && (Build.VERSION.SDK_INT < 29 || !info.isAlias) &&
                 info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }
         }
-        val hw = all.filter { it.isHardwareAccelerated && !it.isSoftwareOnly }.map { Encoder(it.name, true) }
+        val hw = all.filter {
+            if (Build.VERSION.SDK_INT >= 29) it.isHardwareAccelerated && !it.isSoftwareOnly
+            else legacyHardwareEncoder(it.name)
+        }.map { Encoder(it.name, true) }
         // Emulators and a few budget devices only have the software encoder.
         hw.ifEmpty { all.map { Encoder(it.name, false) } }
+    }
+
+    // shortcut: API 26–28 只能按组件名估计软硬编码，API 29+ 使用系统属性。
+    internal fun legacyHardwareEncoder(name: String): Boolean {
+        val lower = name.lowercase(java.util.Locale.ROOT)
+        return lower.startsWith("arc.") ||
+            ((lower.startsWith("omx.") || lower.startsWith("c2.")) &&
+                !lower.startsWith("omx.google.") && !lower.startsWith("omx.ffmpeg.") &&
+                !lower.startsWith("c2.android.") && !lower.startsWith("c2.google.") &&
+                !(lower.startsWith("omx.sec.") && lower.contains(".sw.")))
     }
 
     fun info(name: String): MediaCodecInfo? =

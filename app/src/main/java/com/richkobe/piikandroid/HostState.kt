@@ -42,9 +42,9 @@ object HostState {
     private val externalListeners = CopyOnWriteArrayList<(String) -> Unit>()
     private val log = ArrayDeque<String>()
 
-    fun addListener(l: () -> Unit) = listeners.add(l)
+    fun addListener(l: () -> Unit) = listeners.addIfAbsent(l)
     fun removeListener(l: () -> Unit) = listeners.remove(l)
-    fun addExternalListener(l: (String) -> Unit) = externalListeners.add(l)
+    fun addExternalListener(l: (String) -> Unit) = externalListeners.addIfAbsent(l)
     fun removeExternalListener(l: (String) -> Unit) = externalListeners.remove(l)
 
     fun update(phase: Phase, pageUrl: String? = this.pageUrl, message: String? = null) {

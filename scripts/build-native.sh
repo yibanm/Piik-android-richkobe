@@ -7,51 +7,16 @@
 # They are ordinary Go executables named lib*.so so Android installs them into
 # the app's native library directory, the one place apps may execute files.
 #
-# Requirements: git, Go >= 1.27.3, Node >= 24 (<27) with npm (Piik's web UI build).
-#   版本取自上游 v2.5.0 的 go.mod（go 1.27.3）与 package.json（engines.node ">=24.0.0 <27"）；
-#   低于此版本 Go 会因工具链版本不足直接拒绝构建。
+# Requirements: git, Go >= 1.27.4, Node >= 24 (<27) with npm (Piik v2.7.0).
 # Usage:  scripts/build-native.sh            (arm64 phones)
 #         ABIS="arm64-v8a x86_64" scripts/build-native.sh   (+ emulator)
 set -euo pipefail
 
 PIIK_REPO=${PIIK_REPO:-https://github.com/TNTcraftHIM/Piik}
-# Pinned: the patch and the capture contract (protocol 7) were verified against it.
-# v2.6.0 — 中继额度与分享恢复：房间可设默认转发上限（观众可跟随/调高/调低，0=只收不转）；
-# 建线期间加入与连接重建后的恢复改善（**取消的连接尝试不再阻碍后续重试**）；房主本地预览
-# 播不出来时原生分享继续；附属菜单滚动跳动、不可见提示拦截点击的修复；终端关闭时退出流程；
-# 压缩库升级（GO-2026-6865，zstd 双块帧 panic）。
-# 已核对（2026-11-07，本机实跑构建链 + 与 v2.5.1 精确 diff，非静态推断）：
-#   - probeProtocol 仍为 7；internal/app/nativecapture/probe.go 与 v2.5.1 **零 diff**，
-#     Capabilities 字段集逐字节相同（remoteInput / captureBorderControl / microphone /
-#     processAudioExclusion 等仍是 omitempty，Kotlin probe JSON 不传即兼容，
-#     DisallowUnknownFields 不受影响）；
-#   - 采集契约面只有 stream.go 变化：新增结构化失败码 Failure/FailureDetails，不改帧格式；
-#   - go.mod 仍 go 1.27.3、package.json engines 仍 node >=24 <27（工具链要求不变）；
-#   - vite 仍无 build.target（只新增 optimizeDeps.entries，dist 转译+AST 门禁链路继续必需）；
-#   - internal/app/buildinfo 仍 Release + Revision 双变量，LDFLAGS 注入 Revision 路径不变；
-#   - cmd/piik-app 改用新包 internal/processsignal.NotifyContext（多注册 SIGHUP，尊重
-#     nohup 继承的 ignore）。该包无 build tag，Android 可编译；与壳层处置的引擎退出码
-#     141（SIGPIPE 收尾）无关；
-#   - 补丁触及的四个文件（cmd/piik-app、browser/open.go、lan/addresses.go、
-#     nativecapture/probe.go）在 v2.6.0 均存在，补丁 git apply --check 干净通过；
-#   - 垫片重扫：v2.5.1→v2.6.0 的新增行只用 showPopover / hidePopover / closest，
-#     **无新增无守卫的新 runtime API**，assets/old-webview.js 垫片清单无需扩充；
-#   - 上游对「附属菜单滚动跳动」的修复只删掉了测量前扩张 scrollport 的那行 maxHeight 写入，
-#     window 捕获阶段 scroll 监听**仍在**——与 old-webview.js 里的面板内滚动拦截器修的是
-#     同一条链的不同环节，不冲突，两者都保留。
-# **依赖形态（沿用 v2.5.1）**：go.mod 有两条 replace——
-#   - github.com/pion/webrtc/v4 => github.com/TNTcraftHIM/pion-webrtc/v4
-#     v4.0.0-20261029063205-6ed9e55c5935（H.264 equivalent profiles，上游 PR #3668 未合）；
-#   - github.com/livekit/livekit-server => github.com/TNTcraftHIM/livekit ...。
-# 两者都是 TNTcraftHIM 自己的 fork，走 GOPROXY 正常拉取（本机实测需 goproxy.cn，
-# proxy.golang.org 国内不可达）。fork 属 Apache-2.0（与原 pion 同许可证），无传染性问题。
-# 上游 mobile/（官方 Android 桥）目录仍为 mobile/{android,bridge,cloudflared}，且
-# mobile/cloudflared/fallback_test.go 的测试依赖依旧残缺（rs/zerolog 在 go.mod 中 0 处、
-# quic-go 缺 go.sum 条目），go mod vendor 仍会失败——prepare_vendor 里删 mobile/ 的处置
-# 继续有效。
-PIIK_REF=${PIIK_REF:-31acd8982804230b15384e450bb558dffce01574}
+# Piik v2.7.0；采集协议仍为 7，Android 补丁适用于此固定提交。
+PIIK_REF=${PIIK_REF:-e25bd009501793681c2fc52080846cd092bb917e}
 CLOUDFLARED_REPO=${CLOUDFLARED_REPO:-https://github.com/cloudflare/cloudflared}
-CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.8.3} # the version Piik ships
+CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION:-2026.10.3} # the version Piik ships
 ABIS=${ABIS:-"arm64-v8a armeabi-v7a"}
 SKIP_CLOUDFLARED=${SKIP_CLOUDFLARED:-0}
 
@@ -104,8 +69,7 @@ fi
 # chrome74 原生支持 import.meta / 动态 import / 类字段，esbuild 只降级它缺的
 # ?./??/逻辑赋值/数字分隔符等，两代内核都正常。只降语法不补运行时 API——缺的
 # Promise.allSettled / replaceAll / Object.hasOwn / getAnimations 等由壳层
-# WebActivity.kt 的 assets/old-webview.js 在 onPageStarted 注入，且**按本机
-# WebView 内核主版本 <84 门控**（不按包 ABI、不按屏幕尺寸）。
+# WebActivity.kt 的 assets/old-webview.js 按各 API 是否存在补齐，不按 ABI 或内核版本截断。
 # **降级必须对所有 ABI 的包都做（写死，2026-11-02 回归教训）**：引擎内嵌的 dist
 # 不只服务本机 WebView，还会**分发给连进房间的观看端**（含公开邀请隧道）。曾按
 # 「v8a 不强制兼容老内核」把 arm64 包改成带原始 dist，结果 64 位手机开的房间把
@@ -160,8 +124,9 @@ if [ "${SKIP_WEB:-0}" != 1 ]; then
   command -v npm >/dev/null || { echo "missing: npm (Node.js)" >&2; exit 1; }
   echo "==> Piik web interface"
   (cd "$PIIK" && npm ci --no-audit --no-fund && npm run build:web)
-  transpile_web
 fi
+# 复用已有网页时同样验证兼容性，避免 SKIP_WEB 把现代语法带进安装包。
+transpile_web
 
 # -checklinkname=0: pion's Android interface listing (wlynxg/anet) needs it.
 # v2.5.0: revision var moved to internal/app/buildinfo.Revision (was internal/app.BuildRevision).
@@ -274,18 +239,18 @@ if [ "$SKIP_CLOUDFLARED" != 1 ]; then
       CC_NDK=$(ndk_cc "$abi")
       if [ "$arch" = arm ]; then
         echo "==> $abi: libcloudflared.so (cgo, CC=$CC_NDK)"
-        (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC_NDK" go build -mod=vendor -trimpath \
+        (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch GOARM=7 CC="$CC_NDK" go build -mod=readonly -trimpath \
           -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
           -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
       else
         echo "==> $abi: libcloudflared.so (cgo, CC=$CC_NDK)"
-        (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch CC="$CC_NDK" go build -mod=vendor -trimpath \
+        (cd "$CFD" && CGO_ENABLED=1 GOOS=android GOARCH=$arch CC="$CC_NDK" go build -mod=readonly -trimpath \
           -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
           -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
       fi
     else
       echo "==> $abi: libcloudflared.so"
-      (cd "$CFD" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -mod=vendor -trimpath \
+      (cd "$CFD" && GOOS=android GOARCH=$arch CGO_ENABLED=0 go build -mod=readonly -trimpath \
         -ldflags "-s -w -checklinkname=0 -X main.Version=$CLOUDFLARED_VERSION" \
         -o "$JNI/$abi/libcloudflared.so" ./cmd/cloudflared)
     fi

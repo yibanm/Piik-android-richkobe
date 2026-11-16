@@ -365,7 +365,11 @@ class FloatingBallService : Service() {
             .addAction(Notification.Action.Builder(null, getString(R.string.float_hide), hide).build())
             .build()
         return try {
-            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed", e)

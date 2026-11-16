@@ -306,7 +306,7 @@ class VideoSession(private val context: Context, private val ch: ShimChannel) : 
             try {
                 dec.configure(format, src.inputSurface, null, 0)
             } catch (e: Exception) {
-                format.removeKey(MediaFormat.KEY_LOW_LATENCY)
+                if (android.os.Build.VERSION.SDK_INT >= 30) format.removeKey(MediaFormat.KEY_LOW_LATENCY)
                 dec.reset()
                 dec.configure(format, src.inputSurface, null, 0)
             }

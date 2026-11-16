@@ -49,7 +49,9 @@ class WebActivity : Activity() {
     private var videoAspect = Rational(16, 9)
 
     private val hostListener: () -> Unit = { onHostState() }
-    private val externalListener: (String) -> Unit = { url -> openExternal(url) }
+    private val externalListener: (String) -> Unit = { url ->
+        if (mode == MODE_HOST && !isFinishing && !isDestroyed) openExternal(url)
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,12 +111,10 @@ class WebActivity : Activity() {
     }
 
     private fun handle(intent: Intent, saved: Bundle? = null) {
-        mode = intent.getStringExtra(EXTRA_MODE) ?: if (intent.action == Intent.ACTION_VIEW) MODE_WATCH else mode
+        applyMode(intent.getStringExtra(EXTRA_MODE) ?: if (intent.action == Intent.ACTION_VIEW) MODE_WATCH else mode)
         autoDrive = intent.getBooleanExtra(EXTRA_AUTODRIVE, false)
         val url = intent.getStringExtra(EXTRA_URL) ?: intent.data?.toString()
         if (mode == MODE_HOST) {
-            HostState.addListener(hostListener)
-            HostState.addExternalListener(externalListener)
             // 重开运行中房间优先回用户停留的房间页深链（同会话端口不变、有效）；
             // 无深链才回引擎根路径（launcher）。跨引擎重启的旧深链已被 HostState
             // 在 STOPPED/FAILED 时清空，不会拿到过期端口。
@@ -122,7 +122,6 @@ class WebActivity : Activity() {
             else (HostState.roomPageUrl ?: HostState.pageUrl)?.let { lastHostPage = it; web.loadUrl(it) }
             if (HostState.pageUrl == null) onHostState()
         } else {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (saved != null) web.restoreState(saved) else if (url != null) web.loadUrl(url)
         }
     }
@@ -133,23 +132,34 @@ class WebActivity : Activity() {
         val url = intent.getStringExtra(EXTRA_URL) ?: intent.data?.toString()
         val newMode = intent.getStringExtra(EXTRA_MODE) ?: MODE_WATCH
         autoDrive = intent.getBooleanExtra(EXTRA_AUTODRIVE, false)
+        applyMode(newMode)
         if (newMode == MODE_HOST) {
-            mode = MODE_HOST
-            HostState.addListener(hostListener)
-            HostState.addExternalListener(externalListener)
             (HostState.roomPageUrl ?: HostState.pageUrl)?.let { if (web.url != it) web.loadUrl(it) }
             // 页面已加载且不再重载时（onNewIntent 不触发 onPageStarted），
             // 直接补一次自动驱动注入，否则悬浮球点球不会生效。
             if (autoDrive && web.url != null) injectAutoDrive(web)
         } else if (url != null) {
-            mode = MODE_WATCH
             web.loadUrl(url)
+        }
+    }
+
+    private fun applyMode(next: String) {
+        HostState.removeListener(hostListener)
+        HostState.removeExternalListener(externalListener)
+        mode = next
+        if (mode == MODE_HOST) {
+            HostState.addListener(hostListener)
+            HostState.addExternalListener(externalListener)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
     private var lastHostPage: String? = null
 
     private fun onHostState() {
+        if (mode != MODE_HOST || isFinishing || isDestroyed) return
         when (HostState.phase) {
             HostState.Phase.RUNNING -> (HostState.roomPageUrl ?: HostState.pageUrl)?.let { page ->
                 if (page != lastHostPage) {
@@ -211,30 +221,13 @@ class WebActivity : Activity() {
 
     private var iceFixSource: String? = null
 
-    /**
-     * 老 WebView 兼容注入（幂等，内部有 __piikOldWv / __piikAndroid 守卫）：
-     * assets/old-webview.js 补运行时 API（globalThis、Promise.allSettled、
-     * replaceAll、Object.hasOwn、structuredClone、.at() 等）并收集页面错误，
-     * 白屏时展示中文诊断页；POLYFILLS 是剪贴板/分享/画中画桥接。
-     * onPageStarted 注入保证垫片先于页面脚本运行；onPageFinished 再注入
-     * 一次作为 SPA 路由切换后的兜底（守卫使其成为 no-op）。
-     * 兼容垫片按**本机 WebView 内核主版本 <84** 门控注入（与包 ABI、屏幕尺寸均
-     * 无关：64 位设备也可能跑老内核，2026-11-02 手表实证）；诊断与错误回传全
-     * ABI 保留。POLYFILLS 是功能桥接，全内核注入。
-     */
+    /** 每项补丁自行检测接口，避免按内核版本跳过仍缺失的 API。 */
     private fun injectOldWebViewShims(view: WebView) {
         try {
-            // 兼容垫片按 **WebView 内核版本** 门控（<84 才注入），不按包 ABI：
-            // 真机实证 64 位设备（手表）也可能跑 WebView 74（2026-11-02 诊断：
-            // ABI 首位 arm64-v8a + WebView 74.0.3729.23），按 ABI 门控会让它永远
-            // 拿不到垫片。内核 ≥84 时垫片全部有存在性守卫、本就是 no-op，但连注入
-            // 都省掉，符合「现代内核不背兼容包袱」。诊断与错误回传不受门控影响。
-            val gate = if (needsCompatShims()) "window.__piikCompat=true;" else ""
             val script = oldWebViewSource
                 ?: assets.open("old-webview.js").bufferedReader().use { it.readText() }
                     .also { oldWebViewSource = it }
-            view.evaluateJavascript(gate + script, null)
-            // 剪贴板/分享/画中画桥接是功能而非兼容垫片，全内核注入。
+            view.evaluateJavascript(script, null)
             view.evaluateJavascript(POLYFILLS, null)
         } catch (e: Exception) {
             Log.w("PiikWeb", "old-webview shims inject failed", e)
@@ -243,29 +236,7 @@ class WebActivity : Activity() {
 
     private var oldWebViewSource: String? = null
 
-    /** 垫片覆盖的最新 API 是 Chrome 84（getAnimations/CSSAnimation），内核 ≥84 无需注入。 */
-    private fun needsCompatShims(): Boolean = webViewMajorVersion() < 84
-
-    private var webViewMajor = -1
-    private fun webViewMajorVersion(): Int {
-        if (webViewMajor >= 0) return webViewMajor
-        webViewMajor = runCatching {
-            android.webkit.WebView.getCurrentWebViewPackage()?.versionName
-                ?.substringBefore('.')?.toIntOrNull() ?: 0
-        }.getOrDefault(0)
-        return webViewMajor
-    }
-
-    /**
-     * 悬浮球「开始共享」的自动驱动：壳层替用户点完「进房/建房 → 开始共享」整条
-     * 网页流程，用户只剩系统投屏授权那一下（Android 安全墙，无法绕过）。
-     * 仅在以 [EXTRA_AUTODRIVE] 启动主机页时注入，手动打开主页不触发。
-     * 轮询 DOM 而非一次性点击：launcher→房间页是 SPA pushState，不重载页面。
-     * 选择器按上游 v2.6.0 实测（2026-11-07 逐个 grep 上游源码确认仍在）：进房
-     * `a.lr-btn.is-primary`、LAN `select`、提交 `button[type=submit]`、主控
-     * `#host-start-share`；模式由引擎 `client.json.mode` 持久化，无需点选。
-     * 上游改版致选择器失效时轮询超时自动放弃（回退为现状：用户自己点），不会误点。
-     */
+    /** 轮询兼容 SPA 路由；选择器失效时超时回退手动操作，不绕过系统投屏授权。 */
     private fun injectAutoDrive(view: WebView) {
         if (mode != MODE_HOST || !autoDrive) return
         view.evaluateJavascript(AUTODRIVE_JS, null)
@@ -586,6 +557,7 @@ class WebActivity : Activity() {
         // false（try/catch 兜底），行为与从前一致。
         web.evaluateJavascript(POPOVER_OPEN_JS) { result ->
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result == "true") web.evaluateJavascript(POPOVER_CLOSE_JS, null)
                 else backWithoutPopover()
             }
@@ -636,7 +608,7 @@ class WebActivity : Activity() {
 
         /** 页内是否有打开的浮层。老内核无 popover API，选择器抛错则按 false。 */
         private const val POPOVER_OPEN_JS =
-            "(function(){try{return String(!!document.querySelector(':popover-open'));}catch(e){return 'false';}})();"
+            "(function(){try{return !!document.querySelector(':popover-open');}catch(e){return false;}})();"
 
         private const val POPOVER_CLOSE_JS =
             "(function(){try{var p=document.querySelectorAll(':popover-open');for(var i=0;i<p.length;i++)p[i].hidePopover();}catch(e){}})();"

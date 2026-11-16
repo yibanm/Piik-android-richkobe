@@ -23,10 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # v2.3.0 的 go.mod 要求 go >= 1.27.3，旧配置 1.26.x 会直接构建失败
+      # 上游 v2.7.0 的最低 Go 版本。
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27.x"
+          go-version: "1.27.4"
           cache: true # 缓存 go modules 与 build cache，引擎重编译大幅提速
 
       - uses: actions/setup-node@v4
@@ -43,7 +43,7 @@ jobs:
 
       - uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-35 build-tools;35.0.0"
+          packages: "platforms;android-35 build-tools;35.0.1"
 
       # Piik web UI 的 npm 依赖缓存（依赖在构建时克隆的引擎目录里，
       # 无法按 lockfile 哈希做 key，用固定 key 的下载缓存，内容寻址不会出错）
@@ -53,6 +53,9 @@ jobs:
           path: ~/.npm
           key: npm-download-cache
           restore-keys: npm-download-cache
+
+      - name: Test WebView compatibility
+        run: node --test scripts/webview.test.cjs
 
       - name: Build Piik engine, capture shim and cloudflared
         run: scripts/build-native.sh
@@ -72,7 +75,7 @@ jobs:
           PIIK_KEY_PASSWORD: ${{ secrets.PIIK_KEY_PASSWORD }}
         run: |
           set +e
-          ./gradlew --no-daemon --stacktrace assembleRelease 2>&1 | tee gradle.log
+          ./gradlew --no-daemon --stacktrace testReleaseUnitTest assembleRelease 2>&1 | tee gradle.log
           status=${PIPESTATUS[0]}
           if [ "$status" != 0 ]; then
             # Surface the real errors as annotations (visible without opening raw logs).
@@ -97,6 +100,10 @@ jobs:
             # 核实包内确实带上了对应架构的库，避免空壳包发出去。
             unzip -l "$apk" | grep -q "lib/$abi/" \
               || { echo "::error::$apk 缺少 lib/$abi/ 库"; exit 1; }
+            case "$abi" in
+              arm64-v8a|armeabi-v7a) ;;
+              *) echo "::error::unsupported ABI $abi"; exit 1 ;;
+            esac
             name="Piik-Android-richkobe-v${version}-${abi}.apk"
             cp "$apk" "$name"
             size=$(stat -c%s "$name")
@@ -105,7 +112,7 @@ jobs:
           }$name"
             count=$((count+1))
           done
-          [ "$count" -ge 1 ] || { echo "::error::no APK produced under app/build/outputs/apk/release"; exit 1; }
+          [ "$count" -eq 2 ] || { echo "::error::expected arm64-v8a and armeabi-v7a APKs, got $count"; exit 1; }
           {
             echo "APK_NAMES<<EOF_APK_NAMES"
             printf '%s\n' "$names"

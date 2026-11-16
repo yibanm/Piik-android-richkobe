@@ -55,9 +55,7 @@
   setTimeout(showBlankDiag, 8000);
 
   // ---- 页内错误回传壳层（全 ABI 生效，不受兼容门控影响）----
-  // window 错误/未处理 rejection 实时送给 Android 记入引擎日志，诊断复制能带出
-  // 真凶（error boundary 吞掉的渲染异常靠上面的捕获阶段收集）。兼容垫片按内核
-  // 版本门控、新内核不注入，但这条排查通道全内核保留。
+  // 页内错误回传始终保留，和下方的 API 能力检测互相独立。
   function report(msg) {
     try {
       if (window.PiikAndroid && window.PiikAndroid.reportPageError) {
@@ -90,12 +88,36 @@
     } catch (e) {}
   }, true);
 
-  // ---- 运行时 polyfill（按 WebView 内核版本门控：<84 才注入）----
-  // 门控标记 __piikCompat 由壳层 WebActivity 按「内核主版本 <84」拼接注入
-  // （2026-11-02 终态：不按包 ABI、不按屏幕尺寸——64 位设备也可能跑老内核，
-  // 手表真机实证 ABI 首位 arm64-v8a + WebView 74）。本文件整体全 ABI 注入，
-  // 因为诊断与错误回传（上方）不受门控影响；走到这里 return 只跳过兼容垫片。
-  if (!window.__piikCompat) return;
+  // 按实际接口缺口补齐，内核版本不能代表所有 API 的支持情况。
+  if (typeof window.AbortSignal !== 'undefined' && typeof window.AbortController !== 'undefined') {
+    if (!('reason' in window.AbortSignal.prototype)) {
+      var abortReasons = new WeakMap();
+      var originalAbort = window.AbortController.prototype.abort;
+      Object.defineProperty(window.AbortSignal.prototype, 'reason', {
+        get: function () {
+          if (!this.aborted) return undefined;
+          if (!abortReasons.has(this)) {
+            abortReasons.set(this, new DOMException('This operation was aborted', 'AbortError'));
+          }
+          return abortReasons.get(this);
+        },
+        configurable: true
+      });
+      window.AbortController.prototype.abort = function (reason) {
+        if (!this.signal.aborted) {
+          abortReasons.set(this.signal, reason === undefined
+            ? new DOMException('This operation was aborted', 'AbortError') : reason);
+        }
+        return originalAbort.call(this);
+      };
+    }
+    if (typeof window.AbortSignal.prototype.throwIfAborted !== 'function') {
+      Object.defineProperty(window.AbortSignal.prototype, 'throwIfAborted', {
+        value: function () { if (this.aborted) throw this.reason; },
+        configurable: true, writable: true
+      });
+    }
+  }
 
   // globalThis（Chrome 71+）
   try {
@@ -345,22 +367,7 @@
     }
   } catch (e) { note('setCodecPreferences shim failed: ' + e); }
 
-  // Element/Document.getAnimations + CSSAnimation（均为 Chrome 84+）：v2.5.0 起前端
-  // 就在用，且**调用点全部无守卫**——上一版垫片清单漏扫了这两项（2026-11-01 按
-  // v2.5.1 dist 重扫发现，v2.5.0 源码里同样存在；2026-11-07 按 v2.6.0 再扫一遍，
-  // 新增行只用 showPopover / hidePopover / closest，本清单无需扩充）。
-  // 74 内核上必崩的路径：
-  //   - RoomChatOverlay / RoomReaction 的 onAnimationStart：聊天飘屏与表情动画
-  //     **一开始就必然执行** `event.currentTarget.getAnimations()`，房间里发一条
-  //     消息即抛 TypeError（这是最主要的触发面）；
-  //   - ui/animation.ts 的 replaySvgAnimations：`element.getAnimations()`。由
-  //     BrandMark 的 `bindSvgReplayOnPointerEnter` 绑定 focusin 触发——实测只有
-  //     motion="once" 才绑，而 Header.tsx 那处 BrandMark 在 `<a class="lr-brand">`
-  //     内（聚焦即触发），LauncherForm.tsx 那处在 `<div>` 内不触发；pointerover
-  //     分支对 touch 提前 return，故移动端主要靠 focusin 这条路；
-  //   - participant-motion：`root.getAnimations({ subtree: true })` 同步动画时序。
-  // 补返回空数组的 no-op：所有调用点拿到的都是「没有动画需要重新计时」，语义安全
-  // （动画照常播放，只是不做重播/时序对齐这类纯装饰优化）。
+  // 老内核缺少动画查询接口，返回空数组跳过装饰性重播，不中断聊天渲染。
   try {
     if (typeof window.Element !== 'undefined' &&
         typeof window.Element.prototype.getAnimations !== 'function') {

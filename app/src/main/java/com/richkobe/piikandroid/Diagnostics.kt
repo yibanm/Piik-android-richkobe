@@ -17,18 +17,29 @@ object Diagnostics {
 
     /** Saves [bytes] to Downloads (no storage permission needed on Android 10+). */
     fun saveToDownloads(context: Context, name: String, mime: String, bytes: ByteArray): Uri? {
+        if (Build.VERSION.SDK_INT < 29) {
+            return saveToDownloadsLegacy(name, bytes)?.let { Uri.fromFile(File(it)) }
+        }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.MIME_TYPE, mime.ifBlank { "application/octet-stream" })
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-        resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return null
-        values.clear()
-        values.put(MediaStore.Downloads.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
-        return uri
+        var pending: Uri? = null
+        return try {
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+            pending = uri
+            val output = resolver.openOutputStream(uri) ?: throw java.io.IOException("Download stream unavailable")
+            output.use { it.write(bytes) }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            if (resolver.update(uri, values, null, null) != 1) throw java.io.IOException("Download could not be published")
+            uri
+        } catch (_: Exception) {
+            pending?.let { runCatching { resolver.delete(it, null, null) } }
+            null
+        }
     }
 
     /**
